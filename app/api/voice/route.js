@@ -28,6 +28,7 @@ export async function POST(request) {
     Number.isFinite(Number(body.replyToId)) && Number(body.replyToId) > 0
       ? Number(body.replyToId)
       : null;
+  const topMsgId = Number(body.topMsgId) || null;
   const session = getSessions()[accountIndex];
 
   if (!session || !chatId || !audioB64) {
@@ -53,7 +54,7 @@ export async function POST(request) {
       if (isBlockedEntity(dialog.entity)) {
         return { error: "This chat is hidden", status: 403 };
       }
-      await sendVoiceNote(client, dialog.entity, ogg, { replyToId });
+      await sendVoiceNote(client, dialog.entity, ogg, { replyToId, topMsgId });
       return { ok: true };
     });
     if (result.error) {

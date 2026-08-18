@@ -111,6 +111,8 @@ export default function Home() {
   const [activeChat, setActiveChat] = useState(null);
   const [messages, setMessages] = useState(null);
   const [messagesError, setMessagesError] = useState("");
+  const [topics, setTopics] = useState(null);
+  const [activeTopic, setActiveTopic] = useState(null);
 
   // composer state
   const [text, setText] = useState("");
@@ -197,17 +199,39 @@ export default function Home() {
   }, [accounts, activeAccount, loadDialogs]);
 
   const loadMessages = useCallback(
-    async (chat) => {
+    async (chat, topicId = null) => {
       if (!chat) return;
+      const topicQ = topicId ? `&topic=${topicId}` : "";
       try {
         const data = await api(
-          `/api/messages?account=${activeAccount}&chat=${encodeURIComponent(chat.id)}`
+          `/api/messages?account=${activeAccount}&chat=${encodeURIComponent(
+            chat.id
+          )}${topicQ}`
         );
         setMessages(data.messages);
         setMessagesError("");
       } catch (e) {
         if (e.message !== "unauthorized") {
           setMessages([]);
+          setMessagesError(e.message);
+        }
+      }
+    },
+    [api, activeAccount]
+  );
+
+  const loadTopics = useCallback(
+    async (chat) => {
+      setTopics(null);
+      setMessagesError("");
+      try {
+        const data = await api(
+          `/api/topics?account=${activeAccount}&chat=${encodeURIComponent(chat.id)}`
+        );
+        setTopics(data.topics);
+      } catch (e) {
+        if (e.message !== "unauthorized") {
+          setTopics([]);
           setMessagesError(e.message);
         }
       }
@@ -222,7 +246,28 @@ export default function Home() {
     setReplyTo(null);
     setLinkForm(null);
     cancelVoice();
-    loadMessages(chat);
+    setActiveTopic(null);
+    setTopics(null);
+    if (chat.isForum) loadTopics(chat);
+    else loadMessages(chat);
+  }
+
+  function openTopic(topic) {
+    setActiveTopic(topic);
+    setMessages(null);
+    setMessagesError("");
+    setReplyTo(null);
+    setLinkForm(null);
+    cancelVoice();
+    loadMessages(activeChat, topic.id);
+  }
+
+  function closeTopic() {
+    setActiveTopic(null);
+    setMessages(null);
+    setReplyTo(null);
+    setLinkForm(null);
+    cancelVoice();
   }
 
   useEffect(() => {
@@ -262,11 +307,12 @@ export default function Home() {
           chat: activeChat.id,
           text: body,
           replyToId,
+          topMsgId: activeTopic?.id ?? null,
         }),
       });
       setText("");
       setReplyTo(null);
-      setTimeout(() => loadMessages(activeChat), 600);
+      setTimeout(() => loadMessages(activeChat, activeTopic?.id ?? null), 600);
     } catch (e) {
       if (e.message !== "unauthorized") setMessagesError(e.message);
     } finally {
@@ -290,11 +336,12 @@ export default function Home() {
           text: linkForm.label,
           url,
           replyToId,
+          topMsgId: activeTopic?.id ?? null,
         }),
       });
       setLinkForm(null);
       setReplyTo(null);
-      setTimeout(() => loadMessages(activeChat), 600);
+      setTimeout(() => loadMessages(activeChat, activeTopic?.id ?? null), 600);
     } catch (e) {
       if (e.message !== "unauthorized") setMessagesError(e.message);
     } finally {
@@ -381,11 +428,12 @@ export default function Home() {
           chat: activeChat.id,
           audioB64: voicePreview.b64,
           replyToId,
+          topMsgId: activeTopic?.id ?? null,
         }),
       });
       cancelVoice();
       setReplyTo(null);
-      setTimeout(() => loadMessages(activeChat), 1200);
+      setTimeout(() => loadMessages(activeChat, activeTopic?.id ?? null), 1200);
     } catch (e) {
       if (e.message !== "unauthorized") setMessagesError(e.message);
     } finally {
@@ -526,7 +574,11 @@ export default function Home() {
       </aside>
 
       <main className="main">
-        {activeChat ? (
+        {!activeChat ? (
+          <div className="empty-state">
+            <div className="pill">Select a chat to view messages</div>
+          </div>
+        ) : activeChat.isForum && !activeTopic ? (
           <>
             <div className="main-header">
               <button className="icon-btn back-btn" onClick={() => setActiveChat(null)}>
@@ -543,7 +595,71 @@ export default function Home() {
               >
                 {initials(activeChat.title)}
               </span>
-              <h2>{activeChat.title}</h2>
+              <div className="header-titles">
+                <h2>{activeChat.title}</h2>
+                <span className="header-sub">Topics</span>
+              </div>
+            </div>
+
+            <div className="topic-list">
+              {topics === null && <div className="spinner" />}
+              {topics?.length === 0 && (
+                <div className="notice">This group has no topics.</div>
+              )}
+              {topics?.map((t) => (
+                <button
+                  key={t.id}
+                  className="chat-item"
+                  onClick={() => openTopic(t)}
+                >
+                  <span
+                    className="avatar topic-icon"
+                    style={{ background: t.color || avatarColor(String(t.id)) }}
+                  >
+                    #
+                  </span>
+                  <span className="chat-body">
+                    <span className="chat-top">
+                      <span className="chat-title">{t.title}</span>
+                      <span className="chat-time">{formatTime(t.date)}</span>
+                    </span>
+                    <span className="chat-bottom">
+                      <span className="chat-preview">{t.preview}</span>
+                      {t.unread > 0 && <span className="badge">{t.unread}</span>}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="main-header">
+              <button
+                className="icon-btn back-btn"
+                onClick={() =>
+                  activeTopic ? closeTopic() : setActiveChat(null)
+                }
+              >
+                ←
+              </button>
+              <span
+                className="avatar"
+                style={{
+                  background: avatarColor(activeChat.id),
+                  width: 38,
+                  height: 38,
+                  fontSize: 14,
+                }}
+              >
+                {initials(activeTopic ? activeTopic.title : activeChat.title)}
+              </span>
+              <div className="header-titles">
+                <h2>{activeTopic ? activeTopic.title : activeChat.title}</h2>
+                {activeTopic && (
+                  <span className="header-sub">{activeChat.title}</span>
+                )}
+              </div>
             </div>
 
             <div className="messages">
@@ -779,10 +895,6 @@ export default function Home() {
               </button>
             </div>
           </>
-        ) : (
-          <div className="empty-state">
-            <div className="pill">Select a chat to view messages</div>
-          </div>
         )}
       </main>
 

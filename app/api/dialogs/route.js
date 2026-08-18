@@ -30,6 +30,7 @@ export async function GET(request) {
           out: Boolean(d.message?.out),
           type: d.isUser ? "user" : d.isGroup ? "group" : "channel",
           pinned: Boolean(d.pinned),
+          isForum: Boolean(d.entity?.forum),
         }));
     });
     return Response.json({ dialogs });

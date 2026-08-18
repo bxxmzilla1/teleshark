@@ -22,6 +22,7 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const accountIndex = parseInt(searchParams.get("account") || "0", 10);
   const chatId = searchParams.get("chat");
+  const topicId = Number(searchParams.get("topic")) || null;
   const session = sessionFor(accountIndex);
   if (!session || !chatId) {
     return Response.json({ error: "Missing account or chat" }, { status: 400 });
@@ -34,7 +35,10 @@ export async function GET(request) {
       if (isBlockedEntity(dialog.entity)) {
         return { error: "This chat is hidden", status: 403 };
       }
-      const messages = await client.getMessages(dialog.entity, { limit: 50 });
+      const messages = await client.getMessages(dialog.entity, {
+        limit: 50,
+        ...(topicId ? { replyTo: topicId } : {}),
+      });
       return {
         title: dialog.title || dialog.name || "Chat",
         messages: messages.map(mapMessage).reverse(),
@@ -65,6 +69,7 @@ export async function POST(request) {
     Number.isFinite(Number(body.replyToId)) && Number(body.replyToId) > 0
       ? Number(body.replyToId)
       : null;
+  const topMsgId = Number(body.topMsgId) || null;
   const session = sessionFor(accountIndex);
 
   if (!session || !chatId) {
@@ -82,7 +87,7 @@ export async function POST(request) {
       if (isBlockedEntity(dialog.entity)) {
         return { error: "This chat is hidden", status: 403 };
       }
-      await sendText(client, dialog.entity, text, { replyToId, html });
+      await sendText(client, dialog.entity, text, { replyToId, html, topMsgId });
       return { ok: true };
     });
     if (result.error) {
