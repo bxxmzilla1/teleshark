@@ -162,6 +162,8 @@ export default function Home() {
   const messagesFpRef = useRef("");
   const dialogsInFlightRef = useRef(false);
   const messagesInFlightRef = useRef(false);
+  // In-memory message cache so reopening a chat paints instantly.
+  const messagesCacheRef = useRef(new Map());
 
   function setAuthCookie(pwd) {
     const secure = location.protocol === "https:" ? "; secure" : "";
@@ -228,35 +230,42 @@ export default function Home() {
   }, []);
 
   const loadAccounts = useCallback(async () => {
-    // Instant paint from the last known account list; refresh in background.
-    let hadCache = false;
+    // Instant paint: reuse the last known account list while the fresh one
+    // loads (only when a password is already stored on this device).
+    let painted = false;
     try {
-      const cached = JSON.parse(localStorage.getItem("cache:accounts") || "null");
-      if (cached?.accounts?.length) {
-        setAccounts(cached.accounts);
-        setConfigured(cached.configured);
-        setLocked(false);
-        setChecking(false);
-        hadCache = true;
+      if (localStorage.getItem("app_password")) {
+        const cached = JSON.parse(
+          localStorage.getItem("cachedAccounts") || "null"
+        );
+        if (Array.isArray(cached) && cached.length > 0) {
+          setAccounts(cached);
+          setConfigured(true);
+          setLocked(false);
+          setChecking(false);
+          painted = true;
+        }
       }
     } catch {
       // ignore malformed cache
     }
-    if (!hadCache) setAccounts(null);
+    if (!painted) setAccounts(null);
     try {
       const data = await api("/api/accounts");
       setAccounts(data.accounts);
       setConfigured(data.configured);
       setLocked(false);
       try {
-        localStorage.setItem("cache:accounts", JSON.stringify(data));
+        localStorage.setItem("cachedAccounts", JSON.stringify(data.accounts));
       } catch {
         // ignore storage write errors
       }
     } catch (e) {
-      if (e.message !== "unauthorized" && !hadCache) {
-        setAccounts([]);
-        setConfigured(false);
+      if (e.message !== "unauthorized") {
+        if (!painted) {
+          setAccounts([]);
+          setConfigured(false);
+        }
       }
     } finally {
       setChecking(false);
@@ -272,36 +281,36 @@ export default function Home() {
       setDialogsError("");
       setActiveChat(null);
       setMessages(null);
-      // Instant paint from the last known chat list; refresh in background.
-      let hadCache = false;
+      // Instant paint from the last known chat list for this account.
+      let painted = false;
       try {
         const cached = JSON.parse(
-          localStorage.getItem(`cache:dialogs:${accountIndex}`) || "null"
+          localStorage.getItem(`cachedDialogs:${accountIndex}`) || "null"
         );
         if (Array.isArray(cached) && cached.length > 0) {
           dialogsFpRef.current = JSON.stringify(cached);
           setDialogs(cached);
-          hadCache = true;
+          painted = true;
         }
       } catch {
         // ignore malformed cache
       }
-      if (!hadCache) setDialogs(null);
+      if (!painted) setDialogs(null);
       try {
         const data = await api(`/api/dialogs?account=${accountIndex}`);
         dialogsFpRef.current = JSON.stringify(data.dialogs);
         setDialogs(data.dialogs);
         try {
           localStorage.setItem(
-            `cache:dialogs:${accountIndex}`,
+            `cachedDialogs:${accountIndex}`,
             JSON.stringify(data.dialogs)
           );
         } catch {
-          // ignore storage write errors (list can exceed the quota)
+          // ignore storage write errors
         }
       } catch (e) {
-        if (e.message !== "unauthorized" && !hadCache) {
-          setDialogs([]);
+        if (e.message !== "unauthorized") {
+          if (!painted) setDialogs([]);
           setDialogsError(e.message);
         }
       }
@@ -368,6 +377,13 @@ export default function Home() {
   const loadMessages = useCallback(
     async (chat, topicId = null) => {
       if (!chat) return;
+      const cacheKey = `${activeAccount}:${chat.id}:${topicId || 0}`;
+      // Instant paint from the last messages seen in this chat.
+      const cached = messagesCacheRef.current.get(cacheKey);
+      if (cached) {
+        messagesFpRef.current = JSON.stringify(cached);
+        setMessages(cached);
+      }
       const topicQ = topicId ? `&topic=${topicId}` : "";
       try {
         const data = await api(
@@ -377,10 +393,11 @@ export default function Home() {
         );
         messagesFpRef.current = JSON.stringify(data.messages);
         setMessages(data.messages);
+        messagesCacheRef.current.set(cacheKey, data.messages);
         setMessagesError("");
       } catch (e) {
         if (e.message !== "unauthorized") {
-          setMessages([]);
+          if (!cached) setMessages([]);
           setMessagesError(e.message);
         }
       }
@@ -405,6 +422,10 @@ export default function Home() {
       if (fp !== messagesFpRef.current) {
         messagesFpRef.current = fp;
         setMessages(data.messages);
+        messagesCacheRef.current.set(
+          `${activeAccount}:${activeChat.id}:${activeTopic?.id || 0}`,
+          data.messages
+        );
       }
     } catch {
       // transient poll error — ignore, next tick retries
@@ -425,7 +446,7 @@ export default function Home() {
         dialogsFpRef.current = fp;
         setDialogs(data.dialogs);
         try {
-          localStorage.setItem(`cache:dialogs:${activeAccount}`, fp);
+          localStorage.setItem(`cachedDialogs:${activeAccount}`, fp);
         } catch {
           // ignore storage write errors
         }

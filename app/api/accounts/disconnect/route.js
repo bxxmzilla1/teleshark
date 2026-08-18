@@ -3,7 +3,7 @@ import {
   getSessions,
   withClient,
   logOutSession,
-  destroyPooled,
+  evictPooledClient,
 } from "@/lib/telegram";
 
 export const runtime = "nodejs";
@@ -32,12 +32,12 @@ export async function POST(request) {
     await withClient(session, async (client) => {
       await logOutSession(client);
     });
-    // The pooled connection is dead after logout — drop it.
-    await destroyPooled(session);
+    await evictPooledClient(session);
     return Response.json({ ok: true, loggedOut: true });
   } catch (e) {
     // Session may already be dead (revoked elsewhere) — still report ok so
     // the client can hide the account.
+    await evictPooledClient(session);
     return Response.json({
       ok: true,
       loggedOut: false,

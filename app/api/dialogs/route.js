@@ -4,7 +4,7 @@ import {
   withClient,
   isBlockedEntity,
   previewText,
-  getBlockedIds,
+  getBlockedIdsCached,
 } from "@/lib/telegram";
 
 export const runtime = "nodejs";
@@ -26,7 +26,7 @@ export async function GET(request) {
     const dialogs = await withClient(session, async (client) => {
       const [result, blockedIds] = await Promise.all([
         client.getDialogs({ limit: 100 }),
-        getBlockedIds(client),
+        getBlockedIdsCached(client, session),
       ]);
       return result
         .filter((d) => {
