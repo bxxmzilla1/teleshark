@@ -63,3 +63,22 @@ C:\Qt\6.7.3\msvc2022_64\bin\windeployqt.exe desktop\build\MultiGram.exe
 Then the whole `desktop\build` folder is self-contained — you can create a
 shortcut to `MultiGram.exe`, pin it to the taskbar, or zip the folder and use
 it on any Windows PC without installing Qt.
+
+## Portable build (run on any PC, nothing to install)
+
+To make a fully portable copy that runs on a clean Windows PC:
+
+```bat
+mkdir desktop\portable\MultiGram
+copy desktop\build\MultiGram.exe desktop\portable\MultiGram\
+C:\Qt\6.8.3\msvc2022_64\bin\windeployqt.exe --release --compiler-runtime desktop\portable\MultiGram\MultiGram.exe
+```
+
+Then copy the Visual C++ runtime DLLs (`msvcp140*.dll`, `vcruntime140*.dll`,
+`concrt140.dll`, `vccorlib140.dll`) from
+`C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Redist\MSVC\<version>\x64\Microsoft.VC143.CRT\`
+into `desktop\portable\MultiGram\`, delete `vc_redist.x64.exe`, and zip the
+folder. On any 64-bit Windows 10/11 PC: unzip anywhere and run
+`MultiGram.exe` — no Qt, no Visual C++ redistributable, no installation.
+On first launch it asks for the app URL once; login and settings are stored
+per Windows user.
