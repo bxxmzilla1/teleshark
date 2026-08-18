@@ -638,6 +638,15 @@ export default function VaultPanel({ canSend, sendHint, onSend, accountKey }) {
                         preload="metadata"
                         muted
                         playsInline
+                        onLoadedMetadata={(e) => {
+                          // Nudge past 0s so Chromium paints a real frame
+                          // instead of leaving the tile black.
+                          try {
+                            e.currentTarget.currentTime = 0.1;
+                          } catch {
+                            // frame preview stays blank — not critical
+                          }
+                        }}
                       />
                       <span className="vault-play">▶</span>
                     </>

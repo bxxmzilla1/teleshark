@@ -175,6 +175,69 @@ const UPLOAD_PART_SIZE = 512 * 1024;
 const UPLOAD_PARTS_PER_REQUEST = 5;
 const BIG_FILE_THRESHOLD = 10 * 1024 * 1024;
 
+/**
+ * Read a video blob's duration/dimensions and capture a small poster frame.
+ * Telegram needs these to render the bubble properly — without them videos
+ * show up as blank, mis-shaped bubbles in official clients.
+ */
+function probeVideo(blob) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const v = document.createElement("video");
+    let settled = false;
+    const finish = (meta) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      URL.revokeObjectURL(url);
+      resolve(meta);
+    };
+    const timer = setTimeout(() => finish(null), 8000);
+
+    const capture = () => {
+      const w = v.videoWidth;
+      const h = v.videoHeight;
+      const meta = { duration: Math.round(v.duration || 0), w, h };
+      if (!w || !h) return finish(meta.duration ? meta : null);
+      try {
+        const scale = Math.min(1, 320 / Math.max(w, h));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(w * scale));
+        canvas.height = Math.max(1, Math.round(h * scale));
+        canvas.getContext("2d").drawImage(v, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+          (tb) => {
+            if (!tb) return finish(meta);
+            tb.arrayBuffer().then(
+              (buf) => finish({ ...meta, thumbB64: bufferToBase64(buf) }),
+              () => finish(meta)
+            );
+          },
+          "image/jpeg",
+          0.7
+        );
+      } catch {
+        finish(meta);
+      }
+    };
+
+    v.preload = "auto";
+    v.muted = true;
+    v.playsInline = true;
+    v.onerror = () => finish(null);
+    v.onloadedmetadata = () => {
+      // Seek a tiny bit in so the captured frame isn't a black lead-in.
+      try {
+        v.currentTime = Math.min(0.1, (v.duration || 1) / 2);
+      } catch {
+        capture();
+      }
+    };
+    v.onseeked = capture;
+    v.src = url;
+  });
+}
+
 /** Random positive 63-bit id (decimal string) for a Telegram file upload. */
 function randomFileId() {
   const a = new Uint32Array(2);
@@ -832,6 +895,10 @@ export default function Home() {
     const totalParts = Math.max(1, Math.ceil(blob.size / UPLOAD_PART_SIZE));
     const fileId = randomFileId();
 
+    // Videos need real metadata + a poster frame or Telegram renders them
+    // as blank, squished bubbles.
+    const video = kind === "video" ? await probeVideo(blob) : null;
+
     let batch = [];
     let done = 0;
     const flush = async () => {
@@ -872,6 +939,7 @@ export default function Home() {
         kind,
         chat,
         topMsgId,
+        video,
       }),
     });
     onProgress?.(100);
@@ -1096,6 +1164,12 @@ export default function Home() {
                   style={{ background: avatarColor(acc.name || acc.index) }}
                 >
                   {acc.ok ? initials(acc.name) : "!"}
+                  {acc.ok && (
+                    <QueuedImage
+                      src={`/api/avatar?account=${acc.index}&chat=me`}
+                      alt=""
+                    />
+                  )}
                 </span>
                 {acc.ok
                   ? acc.name || acc.username || `Account ${acc.index + 1}`
