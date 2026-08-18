@@ -89,8 +89,30 @@ function fileKind(file) {
 
 /** Strip UI-only fields (object URL) before writing back to IndexedDB. */
 function toRecord(item) {
-  const { id, name, kind, mime, blob, createdAt, albums } = item;
-  return { id, name, kind, mime, blob, createdAt, albums: albums || [] };
+  const { id, name, kind, mime, blob, createdAt, albums, saved } = item;
+  return {
+    id,
+    name,
+    kind,
+    mime,
+    blob,
+    createdAt,
+    albums: albums || [],
+    saved: saved || {},
+  };
+}
+
+/**
+ * Remember (or forget, when msgId is null) the Saved Messages copy of a
+ * vault item for one Telegram account.
+ */
+export async function setVaultSaved(id, account, msgId) {
+  const rec = await idbGetItem(id);
+  if (!rec) return;
+  const saved = { ...(rec.saved || {}) };
+  if (msgId == null) delete saved[account];
+  else saved[account] = msgId;
+  await idbPutItem({ ...rec, saved });
 }
 
 function downloadItem(item) {
@@ -103,7 +125,13 @@ function downloadItem(item) {
   a.remove();
 }
 
-export default function VaultPanel({ canSend, sendHint, onSend, onClose }) {
+export default function VaultPanel({
+  canSend,
+  sendHint,
+  onSend,
+  onClose,
+  accountKey,
+}) {
   const [items, setItems] = useState(null);
   const [albums, setAlbums] = useState([]);
   // null = album list view, "all" = the built-in All album, otherwise an album
@@ -134,7 +162,7 @@ export default function VaultPanel({ canSend, sendHint, onSend, onClose }) {
         records.map((r) => {
           const url = URL.createObjectURL(r.blob);
           urlsRef.current.push(url);
-          return { ...r, albums: r.albums || [], url };
+          return { ...r, albums: r.albums || [], saved: r.saved || {}, url };
         })
       );
       setAlbums(albumRecords);
@@ -296,6 +324,8 @@ export default function VaultPanel({ canSend, sendHint, onSend, onClose }) {
       setSentId(item.id);
       setTimeout(() => setSentId(null), 2000);
       setViewer(null);
+      // Refresh so the "saved on Telegram" badge appears after a first send.
+      await load();
     } catch (e) {
       if (e.message !== "unauthorized") setError(e.message || "Send failed");
     } finally {
@@ -560,7 +590,7 @@ export default function VaultPanel({ canSend, sendHint, onSend, onClose }) {
             {albumItems.length > 0 && !selectMode && (
               <p className="vault-hint">
                 {canSend
-                  ? "Drag a file into the chat to send it, or tap ➤."
+                  ? "Drag a file into the chat to send it, or tap ➤. The first send stores it in Saved Messages (✓) so later sends are instant."
                   : sendHint}
               </p>
             )}
@@ -627,6 +657,16 @@ export default function VaultPanel({ canSend, sendHint, onSend, onClose }) {
                       <span className="vault-play">▶</span>
                     </>
                   )}
+                  {!selectMode &&
+                    accountKey != null &&
+                    item.saved?.[accountKey] != null && (
+                      <span
+                        className="vault-cached"
+                        title="Saved in Telegram Saved Messages — sends instantly"
+                      >
+                        ✓
+                      </span>
+                    )}
                   {selectMode ? (
                     <span
                       className={`vault-check${selected.has(item.id) ? " on" : ""}`}

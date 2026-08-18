@@ -5,6 +5,7 @@ import Link from "next/link";
 import VoiceNotePlayer from "./components/VoiceNotePlayer";
 import VaultPanel, {
   getVaultItem,
+  setVaultSaved,
   VAULT_DRAG_TYPE,
 } from "./components/VaultPanel";
 
@@ -101,6 +102,21 @@ function bufferToBase64(buf) {
   return btoa(bin);
 }
 
+// Telegram chunked uploads: 512 KB parts, ~2.5 MB of raw data per request so
+// the base64 payload stays under the serverless body limit.
+const UPLOAD_PART_SIZE = 512 * 1024;
+const UPLOAD_PARTS_PER_REQUEST = 5;
+const BIG_FILE_THRESHOLD = 10 * 1024 * 1024;
+
+/** Random positive 63-bit id (decimal string) for a Telegram file upload. */
+function randomFileId() {
+  const a = new Uint32Array(2);
+  crypto.getRandomValues(a);
+  return (
+    (BigInt(a[0] & 0x7fffffff) << 32n) | BigInt(a[1])
+  ).toString();
+}
+
 export default function Home() {
   const [password, setPassword] = useState("");
   const [locked, setLocked] = useState(true);
@@ -122,7 +138,8 @@ export default function Home() {
   const [hiddenAccounts, setHiddenAccounts] = useState([]);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [dropActive, setDropActive] = useState(false);
-  const [dropSending, setDropSending] = useState(false);
+  // null, or { percent } while vault media is uploading/sending to Telegram
+  const [sendProgress, setSendProgress] = useState(null);
 
   // composer state
   const [text, setText] = useState("");
@@ -647,24 +664,132 @@ export default function Home() {
   const canVaultSend =
     !!activeChat && !(activeChat.isForum && !activeTopic);
 
-  async function sendVaultItem(item) {
-    if (!canVaultSend) throw new Error("Open a chat first");
-    if (item.blob.size > 3 * 1024 * 1024) {
-      throw new Error("File is too large to send from the vault (max 3 MB)");
+  /**
+   * Upload a blob to Telegram in 512 KB chunks (no serverless size limit),
+   * then materialize it as a message. Without `chat` it lands in Saved
+   * Messages and the new message id is returned.
+   */
+  async function uploadToTelegram(
+    blob,
+    { fileName, kind, chat = null, topMsgId = null, onProgress }
+  ) {
+    const big = blob.size > BIG_FILE_THRESHOLD;
+    const totalParts = Math.max(1, Math.ceil(blob.size / UPLOAD_PART_SIZE));
+    const fileId = randomFileId();
+
+    let batch = [];
+    let done = 0;
+    const flush = async () => {
+      if (batch.length === 0) return;
+      await api("/api/vault/upload-part", {
+        method: "POST",
+        body: JSON.stringify({
+          account: activeAccount,
+          fileId,
+          big,
+          totalParts,
+          parts: batch,
+        }),
+      });
+      done += batch.length;
+      batch = [];
+      onProgress?.(Math.round((done / totalParts) * 90));
+    };
+
+    for (let i = 0; i < totalParts; i++) {
+      const chunk = blob.slice(
+        i * UPLOAD_PART_SIZE,
+        Math.min(blob.size, (i + 1) * UPLOAD_PART_SIZE)
+      );
+      batch.push({ index: i, bytesB64: bufferToBase64(await chunk.arrayBuffer()) });
+      if (batch.length >= UPLOAD_PARTS_PER_REQUEST) await flush();
     }
-    const b64 = bufferToBase64(await item.blob.arrayBuffer());
-    await api("/api/send-media", {
+    await flush();
+
+    const saved = await api("/api/vault/save", {
       method: "POST",
       body: JSON.stringify({
         account: activeAccount,
-        chat: activeChat.id,
-        topMsgId: activeTopic?.id ?? null,
-        fileB64: b64,
-        fileName: item.name,
-        kind: item.kind,
+        fileId,
+        big,
+        totalParts,
+        fileName,
+        kind,
+        chat,
+        topMsgId,
       }),
     });
-    setTimeout(() => loadMessages(activeChat, activeTopic?.id ?? null), 1000);
+    onProgress?.(100);
+    return saved.msgId ?? null;
+  }
+
+  /**
+   * Send a vault item (or a file dropped from the device) into the open chat.
+   * Vault items are uploaded once into the account's Saved Messages and the
+   * copy is reused, so repeat sends are instant for any file size.
+   */
+  async function sendVaultItem(item) {
+    if (!canVaultSend) throw new Error("Open a chat first");
+    const target = { chat: activeChat.id, topMsgId: activeTopic?.id ?? null };
+    const onProgress = (percent) => setSendProgress({ percent });
+    setSendProgress({ percent: 0 });
+    try {
+      // 1) Instant path: reuse the Saved Messages copy for this account.
+      const cachedId = item.id ? item.saved?.[activeAccount] : null;
+      if (cachedId != null) {
+        try {
+          await api("/api/vault/send-cached", {
+            method: "POST",
+            body: JSON.stringify({
+              account: activeAccount,
+              msgId: cachedId,
+              ...target,
+            }),
+          });
+          setTimeout(
+            () => loadMessages(activeChat, activeTopic?.id ?? null),
+            1000
+          );
+          return;
+        } catch (e) {
+          if (e.message === "unauthorized") throw e;
+          // The saved copy is gone — forget it and re-upload below.
+          await setVaultSaved(item.id, activeAccount, null);
+        }
+      }
+
+      if (item.id) {
+        // Vault item: upload once into Saved Messages, remember the copy,
+        // then send it into the chat from there.
+        const msgId = await uploadToTelegram(item.blob, {
+          fileName: item.name,
+          kind: item.kind,
+          onProgress,
+        });
+        if (msgId != null) {
+          await setVaultSaved(item.id, activeAccount, msgId);
+          await api("/api/vault/send-cached", {
+            method: "POST",
+            body: JSON.stringify({
+              account: activeAccount,
+              msgId,
+              ...target,
+            }),
+          });
+        }
+      } else {
+        // File dropped from the device: upload straight into the chat.
+        await uploadToTelegram(item.blob, {
+          fileName: item.name,
+          kind: item.kind,
+          ...target,
+          onProgress,
+        });
+      }
+      setTimeout(() => loadMessages(activeChat, activeTopic?.id ?? null), 1000);
+    } finally {
+      setSendProgress(null);
+    }
   }
 
   // ---- Drag & drop into the chat (vault tiles or files from the device) ----
@@ -692,7 +817,6 @@ export default function Home() {
     setMessagesError("");
     const vaultId = e.dataTransfer.getData(VAULT_DRAG_TYPE);
     const files = Array.from(e.dataTransfer.files || []);
-    setDropSending(true);
     try {
       if (vaultId) {
         const item = await getVaultItem(vaultId);
@@ -713,8 +837,6 @@ export default function Home() {
       }
     } catch (err) {
       if (err.message !== "unauthorized") setMessagesError(err.message);
-    } finally {
-      setDropSending(false);
     }
   }
 
@@ -1144,8 +1266,18 @@ export default function Home() {
               <div ref={messagesEndRef} />
             </div>
 
-            {dropSending && (
-              <div className="drop-sending">Sending media to Telegram…</div>
+            {sendProgress && (
+              <div className="drop-sending">
+                <span>
+                  Sending media to Telegram… {sendProgress.percent}%
+                </span>
+                <span className="drop-progress">
+                  <span
+                    className="drop-progress-fill"
+                    style={{ width: `${Math.max(3, sendProgress.percent)}%` }}
+                  />
+                </span>
+              </div>
             )}
 
             {replyTo && (
@@ -1282,6 +1414,7 @@ export default function Home() {
       {vaultOpen && (
         <VaultPanel
           canSend={canVaultSend}
+          accountKey={activeAccount}
           sendHint={
             activeChat?.isForum && !activeTopic
               ? "Open a topic to send media into it."
