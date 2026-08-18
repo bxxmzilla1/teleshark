@@ -56,6 +56,7 @@ Project → **Settings → Environment Variables**:
 | `ELEVENLABS_API_KEY` | your ElevenLabs API key (for AI voice notes) |
 | `ELEVENLABS_VOICE_ID` | the ElevenLabs Voice ID to speak with |
 | `ELEVENLABS_MODEL_ID` | optional — TTS model, defaults to `eleven_v3` |
+| `APP_URL` | optional — the canonical URL of this project (e.g. `https://your-app.vercel.app`). The desktop app checks it on every launch and follows it automatically, so you can re-point the app from Vercel without touching the desktop. Defaults to Vercel's production URL. |
 
 The `ELEVENLABS_*` variables are only needed if you want the AI voice-note feature. Get the API key from your [ElevenLabs account](https://elevenlabs.io/) and copy a Voice ID from the Voices page (or the Voice Library).
 

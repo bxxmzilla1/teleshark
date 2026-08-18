@@ -2,6 +2,7 @@
 
 #include <QMainWindow>
 
+class QNetworkAccessManager;
 class QWebEngineView;
 class QWebEngineProfile;
 class QWebEngineDownloadRequest;
@@ -27,8 +28,10 @@ private slots:
 private:
     void buildMenu();
     void loadAppUrl();
+    void syncCanonicalUrl();
     QString appUrl() const;
 
     QWebEngineView *m_view = nullptr;
     QWebEngineProfile *m_profile = nullptr;
+    QNetworkAccessManager *m_net = nullptr;
 };

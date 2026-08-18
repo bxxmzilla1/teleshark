@@ -47,6 +47,12 @@ On first launch the app asks for your MultiGram URL — enter your Vercel
 deployment address (e.g. `https://your-app.vercel.app`). It's remembered; you
 can change it any time via **App → Set app URL…**.
 
+The URL is also managed from Vercel: set the `APP_URL` environment variable
+in your Vercel project (Settings → Environment Variables) to the canonical
+address, and the desktop app will check it on every launch and follow it
+automatically. If you ever move the deployment to a new domain, just update
+`APP_URL` and redeploy — no need to retype anything in the desktop app.
+
 To run the exe outside the build environment (or copy it to another PC),
 bundle the Qt runtime next to it once:
 

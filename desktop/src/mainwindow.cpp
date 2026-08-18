@@ -7,9 +7,14 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QInputDialog>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QWebEngineDownloadRequest>
@@ -64,6 +69,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     connect(m_profile, &QWebEngineProfile::downloadRequested, this,
             &MainWindow::handleDownload);
 
+    m_net = new QNetworkAccessManager(this);
+
     buildMenu();
 
     QSettings s;
@@ -86,6 +93,42 @@ void MainWindow::loadAppUrl() {
         return;
     }
     m_view->load(QUrl(url));
+    syncCanonicalUrl();
+}
+
+/**
+ * Ask the deployment for its canonical address (the APP_URL environment
+ * variable set in Vercel). If it differs from the saved URL, follow it and
+ * remember it — so the app URL is managed centrally from Vercel.
+ */
+void MainWindow::syncCanonicalUrl() {
+    const QString current = appUrl();
+    if (current.isEmpty()) return;
+
+    QUrl endpoint(current);
+    endpoint.setPath(QStringLiteral("/api/app-url"));
+    endpoint.setQuery(QString());
+
+    QNetworkRequest request(endpoint);
+    request.setTransferTimeout(10000);
+    QNetworkReply *reply = m_net->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) return;
+
+        const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+        QString canonical =
+            doc.object().value(QStringLiteral("url")).toString().trimmed();
+        while (canonical.endsWith(QLatin1Char('/'))) canonical.chop(1);
+        if (canonical.isEmpty() || QUrl(canonical).host().isEmpty()) return;
+
+        QString saved = appUrl();
+        while (saved.endsWith(QLatin1Char('/'))) saved.chop(1);
+        if (canonical.compare(saved, Qt::CaseInsensitive) == 0) return;
+
+        QSettings().setValue(QStringLiteral("appUrl"), canonical);
+        m_view->load(QUrl(canonical));
+    });
 }
 
 void MainWindow::promptForUrl() {
@@ -113,6 +156,7 @@ void MainWindow::promptForUrl() {
     }
     QSettings().setValue(QStringLiteral("appUrl"), url);
     m_view->load(QUrl(url));
+    syncCanonicalUrl();
 }
 
 void MainWindow::handleDownload(QWebEngineDownloadRequest *download) {

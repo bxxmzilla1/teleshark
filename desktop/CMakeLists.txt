@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Qt WebEngine on Windows requires the MSVC builds of Qt (not MinGW).
-find_package(Qt6 REQUIRED COMPONENTS Widgets WebEngineWidgets Svg)
+find_package(Qt6 REQUIRED COMPONENTS Widgets WebEngineWidgets Svg Network)
 qt_standard_project_setup()
 
 qt_add_executable(MultiGram WIN32
@@ -24,4 +24,5 @@ target_link_libraries(MultiGram PRIVATE
     Qt6::Widgets
     Qt6::WebEngineWidgets
     Qt6::Svg
+    Qt6::Network
 )
