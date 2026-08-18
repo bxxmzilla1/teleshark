@@ -87,8 +87,7 @@ function MessageText({ text, links }) {
   return <>{nodes}</>;
 }
 
-async function blobToBase64(blob) {
-  const buf = await blob.arrayBuffer();
+function bufferToBase64(buf) {
   const bytes = new Uint8Array(buf);
   let bin = "";
   const CHUNK = 0x8000;
@@ -120,11 +119,9 @@ export default function Home() {
   const [linkForm, setLinkForm] = useState(null); // { label, url } or null
   const [forwardMsg, setForwardMsg] = useState(null);
 
-  // voice recorder state: idle | recording | preview
-  const [recState, setRecState] = useState("idle");
+  // AI voice note state
   const [voicePreview, setVoicePreview] = useState(null); // { url, b64 }
-  const recorderRef = useRef(null);
-  const chunksRef = useRef([]);
+  const [voiceBusy, setVoiceBusy] = useState(null); // "generating" | "sending" | null
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -324,63 +321,56 @@ export default function Home() {
     }
   }
 
-  // ---- voice recording ----
+  // ---- AI text-to-speech voice notes (ElevenLabs) ----
   const cancelVoice = useCallback(() => {
     setVoicePreview((prev) => {
       if (prev) URL.revokeObjectURL(prev.url);
       return null;
     });
-    setRecState("idle");
-    const rec = recorderRef.current;
-    if (rec && rec.state !== "inactive") {
-      try {
-        rec.stop();
-      } catch {
-        // ignore
-      }
-    }
-    recorderRef.current = null;
-    chunksRef.current = [];
+    setVoiceBusy(null);
   }, []);
 
-  async function startRecording() {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setMessagesError("Recording is not supported on this device");
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec = new MediaRecorder(stream);
-      chunksRef.current = [];
-      rec.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-      rec.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(chunksRef.current, {
-          type: chunksRef.current[0]?.type || "audio/webm",
-        });
-        const b64 = await blobToBase64(blob);
-        const url = URL.createObjectURL(blob);
-        setVoicePreview({ url, b64 });
-        setRecState("preview");
-      };
-      recorderRef.current = rec;
-      rec.start();
-      setRecState("recording");
-    } catch {
-      setMessagesError("Microphone permission denied");
-    }
-  }
+  // Switching chats drops any voice preview in progress.
+  useEffect(() => cancelVoice(), [activeChat, cancelVoice]);
 
-  function stopRecording() {
-    const rec = recorderRef.current;
-    if (rec && rec.state !== "inactive") rec.stop();
+  async function generateVoice() {
+    const body = text.trim();
+    if (!body || voiceBusy) return;
+    setVoiceBusy("generating");
+    setMessagesError("");
+    try {
+      const pwd = localStorage.getItem("app_password") || "";
+      const res = await fetch("/api/voice/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-app-password": pwd },
+        body: JSON.stringify({ text: body }),
+      });
+      if (res.status === 401) {
+        setLocked(true);
+        return;
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setMessagesError(data.error || "Could not generate the voice note");
+        return;
+      }
+      const buf = await res.arrayBuffer();
+      const b64 = bufferToBase64(buf);
+      const url = URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" }));
+      setVoicePreview((prev) => {
+        if (prev) URL.revokeObjectURL(prev.url);
+        return { url, b64 };
+      });
+    } catch {
+      setMessagesError("Could not generate the voice note");
+    } finally {
+      setVoiceBusy(null);
+    }
   }
 
   async function sendVoice() {
-    if (!voicePreview || !activeChat) return;
-    setSending(true);
+    if (!voicePreview || !activeChat || voiceBusy) return;
+    setVoiceBusy("sending");
     setMessagesError("");
     const replyToId = replyTo?.id ?? null;
     try {
@@ -399,7 +389,7 @@ export default function Home() {
     } catch (e) {
       if (e.message !== "unauthorized") setMessagesError(e.message);
     } finally {
-      setSending(false);
+      setVoiceBusy(null);
     }
   }
 
@@ -710,105 +700,83 @@ export default function Home() {
 
             {voicePreview && (
               <div className="voice-preview">
+                <span className="composer-hint">AI voice note ready</span>
                 <VoiceNotePlayer src={voicePreview.url} />
               </div>
             )}
 
             <div className="composer">
-              {recState === "recording" ? (
-                <>
-                  <span className="rec-indicator">● Recording…</span>
-                  <button
-                    type="button"
-                    className="composer-btn stop"
-                    onClick={stopRecording}
-                    title="Stop recording"
-                    aria-label="Stop recording"
-                  >
-                    ■
-                  </button>
-                  <button
-                    type="button"
-                    className="composer-btn"
-                    onClick={cancelVoice}
-                    title="Cancel"
-                    aria-label="Cancel recording"
-                  >
-                    ×
-                  </button>
-                </>
-              ) : voicePreview ? (
-                <>
-                  <span className="composer-hint">Voice note ready</span>
-                  <button
-                    type="button"
-                    className="composer-btn"
-                    onClick={cancelVoice}
-                    title="Discard"
-                    aria-label="Discard voice note"
-                  >
-                    ×
-                  </button>
-                  <button
-                    type="button"
-                    className="composer-btn send"
-                    onClick={() => void sendVoice()}
-                    disabled={sending}
-                    title="Send voice note"
-                    aria-label="Send voice note"
-                  >
-                    ➤
-                  </button>
-                </>
-              ) : (
-                <>
-                  <textarea
-                    ref={inputRef}
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        void send();
-                      }
-                    }}
-                    rows={1}
-                    placeholder={
-                      replyTo ? "Reply to the selected message…" : "Message…"
-                    }
-                  />
-                  <button
-                    type="button"
-                    className="composer-btn"
-                    onClick={() =>
-                      setLinkForm((f) => (f ? null : { label: "", url: "" }))
-                    }
-                    title="Send a clickable link"
-                    aria-label="Send a clickable link"
-                  >
-                    🔗
-                  </button>
-                  <button
-                    type="button"
-                    className="composer-btn"
-                    onClick={() => void startRecording()}
-                    title="Record a voice note"
-                    aria-label="Record a voice note"
-                  >
-                    🎤
-                  </button>
-                  <button
-                    type="button"
-                    className="composer-btn send"
-                    onClick={() => void send()}
-                    disabled={sending || !text.trim()}
-                    title="Send"
-                    aria-label="Send"
-                  >
-                    ➤
-                  </button>
-                </>
+              <textarea
+                ref={inputRef}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (voicePreview) void sendVoice();
+                    else void send();
+                  }
+                }}
+                rows={1}
+                placeholder={
+                  voicePreview
+                    ? "Enter sends the voice note · mic regenerates"
+                    : replyTo
+                      ? "Reply to the selected message…"
+                      : "Message… (mic turns it into an AI voice note)"
+                }
+              />
+              {voicePreview && (
+                <button
+                  type="button"
+                  className="composer-btn"
+                  onClick={cancelVoice}
+                  disabled={voiceBusy === "sending"}
+                  title="Discard voice note"
+                  aria-label="Discard voice note"
+                >
+                  ×
+                </button>
               )}
+              {!voicePreview && (
+                <button
+                  type="button"
+                  className="composer-btn"
+                  onClick={() =>
+                    setLinkForm((f) => (f ? null : { label: "", url: "" }))
+                  }
+                  title="Send a clickable link"
+                  aria-label="Send a clickable link"
+                >
+                  🔗
+                </button>
+              )}
+              <button
+                type="button"
+                className={`composer-btn${voicePreview || voiceBusy === "generating" ? " ai-on" : ""}`}
+                onClick={() => void generateVoice()}
+                disabled={voiceBusy !== null || !text.trim()}
+                title={
+                  voicePreview
+                    ? "Regenerate the AI voice note from your text"
+                    : "Turn your text into an AI voice note (ElevenLabs) — try tags like [giggles], [whispers]"
+                }
+                aria-label={voicePreview ? "Regenerate AI voice note" : "Generate AI voice note"}
+              >
+                🎤
+              </button>
+              <button
+                type="button"
+                className="composer-btn send"
+                onClick={() => (voicePreview ? void sendVoice() : void send())}
+                disabled={
+                  voicePreview ? voiceBusy !== null : sending || !text.trim()
+                }
+                title={voicePreview ? "Send voice note" : "Send"}
+                aria-label={voicePreview ? "Send voice note" : "Send"}
+              >
+                ➤
+              </button>
             </div>
           </>
         ) : (

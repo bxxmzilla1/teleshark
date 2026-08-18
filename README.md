@@ -13,7 +13,7 @@ A PWA (installable web app) that connects **multiple Telegram accounts** and let
 ## Chat features
 
 - **Media display** — photos, videos, GIFs and stickers render inline; voice notes get an inline player with a scrub bar (`/api/media` proxies the download, authenticated).
-- **Voice notes** — record a voice note in the browser (mic button) and send it as a real Telegram voice message. Recorded audio is converted to OGG/Opus server-side with a bundled `ffmpeg` binary so it shows as a round voice bubble.
+- **AI voice notes (text-to-speech)** — type your message, tap the mic to turn it into an ElevenLabs AI voice, preview it, then send it as a real Telegram voice message (round bubble). The generated MP3 is converted to OGG/Opus server-side with a bundled `ffmpeg` binary. Supports v3 audio tags like `[giggles]` or `[whispers]`.
 - **Clickable links** — URLs in messages render as clickable links. The link button (🔗) sends a labelled clickable link (e.g. the word "Tap here" linking to a URL) using Telegram HTML formatting.
 - **Reply** — reply to any message; the quoted message is shown above your reply.
 - **Forward** — forward any message to another chat, channel or group on the same account (picker lists your other chats).
@@ -49,6 +49,11 @@ Project → **Settings → Environment Variables**:
 | `TELEGRAM_API_HASH` | your `api_hash` from my.telegram.org |
 | `TELEGRAM_SESSIONS` | session strings, comma-separated (see step 4) |
 | `APP_PASSWORD` | a password to lock the app (strongly recommended) |
+| `ELEVENLABS_API_KEY` | your ElevenLabs API key (for AI voice notes) |
+| `ELEVENLABS_VOICE_ID` | the ElevenLabs Voice ID to speak with |
+| `ELEVENLABS_MODEL_ID` | optional — TTS model, defaults to `eleven_v3` |
+
+The `ELEVENLABS_*` variables are only needed if you want the AI voice-note feature. Get the API key from your [ElevenLabs account](https://elevenlabs.io/) and copy a Voice ID from the Voices page (or the Voice Library).
 
 ### 4. Link your Telegram accounts
 

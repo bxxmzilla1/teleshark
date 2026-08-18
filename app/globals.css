@@ -671,6 +671,16 @@ input {
   color: #fff;
 }
 
+.composer-btn.ai-on {
+  background: var(--accent);
+  color: #fff;
+}
+
+.composer-btn.ai-on:disabled {
+  opacity: 1;
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
 .composer-btn:disabled {
   opacity: 0.4;
 }
