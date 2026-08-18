@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import VoiceNotePlayer from "./components/VoiceNotePlayer";
+import VaultPanel from "./components/VaultPanel";
 
 const AVATAR_COLORS = [
   "#e17076", "#7bc862", "#e5ca77", "#65aadd",
@@ -115,6 +116,8 @@ export default function Home() {
   const [activeTopic, setActiveTopic] = useState(null);
   const [playingVideos, setPlayingVideos] = useState({});
   const [nicknames, setNicknames] = useState({});
+  const [hiddenAccounts, setHiddenAccounts] = useState([]);
+  const [vaultOpen, setVaultOpen] = useState(false);
 
   // composer state
   const [text, setText] = useState("");
@@ -143,10 +146,16 @@ export default function Home() {
     document.cookie = `app_password=${encodeURIComponent(pwd)}; path=/; max-age=2592000; samesite=lax${secure}`;
   }
 
-  // Per-user nicknames, stored locally on this device.
+  // Per-user nicknames and disconnected accounts, stored locally on this device.
   useEffect(() => {
     try {
       setNicknames(JSON.parse(localStorage.getItem("nicknames") || "{}"));
+    } catch {
+      // ignore malformed storage
+    }
+    try {
+      const hidden = JSON.parse(localStorage.getItem("hiddenAccounts") || "[]");
+      if (Array.isArray(hidden)) setHiddenAccounts(hidden.map(Number));
     } catch {
       // ignore malformed storage
     }
@@ -242,6 +251,56 @@ export default function Home() {
       loadDialogs(activeAccount);
     }
   }, [accounts, activeAccount, loadDialogs]);
+
+  // If the active account was disconnected (hidden), fall back to the first
+  // visible one.
+  useEffect(() => {
+    if (!accounts || accounts.length === 0) return;
+    if (!hiddenAccounts.includes(activeAccount)) return;
+    const fallback =
+      accounts.find((a) => a.ok && !hiddenAccounts.includes(a.index)) ||
+      accounts.find((a) => !hiddenAccounts.includes(a.index));
+    if (fallback && fallback.index !== activeAccount) {
+      setActiveAccount(fallback.index);
+    }
+  }, [accounts, hiddenAccounts, activeAccount]);
+
+  /**
+   * Disconnect an account: revoke its session on Telegram's servers, then
+   * hide it in this app. The dead session string should also be removed from
+   * TELEGRAM_SESSIONS in Vercel.
+   */
+  async function disconnectAccount(acc) {
+    const label = acc.ok
+      ? acc.name || acc.username || `Account ${acc.index + 1}`
+      : `Account ${acc.index + 1}`;
+    const sure = window.confirm(
+      `Disconnect ${label}?\n\nThis logs the account out of Telegram (its saved session is permanently revoked) and removes it from this app.\n\nTo finish cleanup, also delete its session string from TELEGRAM_SESSIONS in your Vercel environment variables.`
+    );
+    if (!sure) return;
+    try {
+      await api("/api/accounts/disconnect", {
+        method: "POST",
+        body: JSON.stringify({ account: acc.index }),
+      });
+    } catch (e) {
+      if (e.message === "unauthorized") return;
+      // Session may already be dead — hide the account locally anyway.
+    }
+    setHiddenAccounts((prev) => {
+      const next = prev.includes(acc.index) ? prev : [...prev, acc.index];
+      try {
+        localStorage.setItem("hiddenAccounts", JSON.stringify(next));
+      } catch {
+        // ignore storage write errors
+      }
+      return next;
+    });
+    if (activeAccount === acc.index) {
+      setActiveChat(null);
+      setMessages(null);
+    }
+  }
 
   const loadMessages = useCallback(
     async (chat, topicId = null) => {
@@ -579,6 +638,30 @@ export default function Home() {
     }
   }
 
+  // ---- Vault: send a locally stored photo/video into the open chat ----
+  const canVaultSend =
+    !!activeChat && !(activeChat.isForum && !activeTopic);
+
+  async function sendVaultItem(item) {
+    if (!canVaultSend) throw new Error("Open a chat first");
+    if (item.blob.size > 3 * 1024 * 1024) {
+      throw new Error("File is too large to send from the vault (max 3 MB)");
+    }
+    const b64 = bufferToBase64(await item.blob.arrayBuffer());
+    await api("/api/send-media", {
+      method: "POST",
+      body: JSON.stringify({
+        account: activeAccount,
+        chat: activeChat.id,
+        topMsgId: activeTopic?.id ?? null,
+        fileB64: b64,
+        fileName: item.name,
+        kind: item.kind,
+      }),
+    });
+    setTimeout(() => loadMessages(activeChat, activeTopic?.id ?? null), 1000);
+  }
+
   function mediaSrc(id) {
     return `/api/media?account=${activeAccount}&chat=${encodeURIComponent(
       activeChat.id
@@ -628,9 +711,14 @@ export default function Home() {
   }
 
   const okAccounts = accounts || [];
+  const visibleAccounts = okAccounts.filter(
+    (acc) => !hiddenAccounts.includes(acc.index)
+  );
 
   return (
-    <div className={`app${activeChat ? " chat-open" : ""}`}>
+    <div
+      className={`app${activeChat ? " chat-open" : ""}${vaultOpen ? " vault-open" : ""}`}
+    >
       <aside className="sidebar">
         <div className="sidebar-header">
           <h1>MultiGram</h1>
@@ -644,11 +732,19 @@ export default function Home() {
           >
             ⟳
           </button>
+          <button
+            className={`icon-btn${vaultOpen ? " on" : ""}`}
+            title="Vault"
+            aria-label="Toggle vault"
+            onClick={() => setVaultOpen((v) => !v)}
+          >
+            🔒
+          </button>
         </div>
 
-        {okAccounts.length > 0 && (
+        {visibleAccounts.length > 0 && (
           <div className="account-tabs">
-            {okAccounts.map((acc) => (
+            {visibleAccounts.map((acc) => (
               <button
                 key={acc.index}
                 className={`account-tab${acc.index === activeAccount ? " active" : ""}`}
@@ -664,6 +760,26 @@ export default function Home() {
                 {acc.ok
                   ? acc.name || acc.username || `Account ${acc.index + 1}`
                   : `Account ${acc.index + 1} (error)`}
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="tab-x"
+                  title="Disconnect this account"
+                  aria-label="Disconnect this account"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void disconnectAccount(acc);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void disconnectAccount(acc);
+                    }
+                  }}
+                >
+                  ×
+                </span>
               </button>
             ))}
           </div>
@@ -746,6 +862,15 @@ export default function Home() {
               >
                 ✎
               </button>
+              <button
+                type="button"
+                className={`icon-btn${vaultOpen ? " on" : ""}`}
+                title="Vault"
+                aria-label="Toggle vault"
+                onClick={() => setVaultOpen((v) => !v)}
+              >
+                🔒
+              </button>
             </div>
 
             <div className="topic-list">
@@ -818,6 +943,15 @@ export default function Home() {
                   ✎
                 </button>
               )}
+              <button
+                type="button"
+                className={`icon-btn${vaultOpen ? " on" : ""}`}
+                title="Vault"
+                aria-label="Toggle vault"
+                onClick={() => setVaultOpen((v) => !v)}
+              >
+                🔒
+              </button>
             </div>
 
             <div className="messages" ref={messagesBoxRef} onScroll={onMessagesScroll}>
@@ -1077,6 +1211,19 @@ export default function Home() {
           </>
         )}
       </main>
+
+      {vaultOpen && (
+        <VaultPanel
+          canSend={canVaultSend}
+          sendHint={
+            activeChat?.isForum && !activeTopic
+              ? "Open a topic to send media into it."
+              : "Open a chat to send media into it."
+          }
+          onSend={sendVaultItem}
+          onClose={() => setVaultOpen(false)}
+        />
+      )}
 
       {forwardMsg && (
         <div className="modal-backdrop" onClick={closeForward}>
