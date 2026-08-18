@@ -92,6 +92,14 @@ function MessageText({ text, links }) {
   return <>{nodes}</>;
 }
 
+/** Turn raw Telegram errors into instructions the user can act on. */
+function friendlyError(msg) {
+  if (/SESSION_REVOKED|AUTH_KEY_UNREGISTERED|SESSION_EXPIRED/i.test(msg || "")) {
+    return "This account was disconnected — its session is no longer valid. Remove its session string from TELEGRAM_SESSIONS in Vercel and redeploy.";
+  }
+  return msg;
+}
+
 function bufferToBase64(buf) {
   const bytes = new Uint8Array(buf);
   let bin = "";
@@ -310,7 +318,7 @@ export default function Home() {
       } catch (e) {
         if (e.message !== "unauthorized") {
           if (!painted) setDialogs([]);
-          setDialogsError(e.message);
+          setDialogsError(friendlyError(e.message));
         }
       }
     },
@@ -340,11 +348,12 @@ export default function Home() {
     });
   }, [accounts]);
 
-  // If the active account was disconnected (hidden), fall back to the first
-  // visible one.
+  // If the active account is hidden or its session is dead, fall back to the
+  // first working visible account automatically.
   useEffect(() => {
     if (!accounts || accounts.length === 0) return;
-    if (!hiddenAccounts.includes(activeAccount)) return;
+    const current = accounts[activeAccount];
+    if (current?.ok && !hiddenAccounts.includes(activeAccount)) return;
     const fallback =
       accounts.find((a) => a.ok && !hiddenAccounts.includes(a.index)) ||
       accounts.find((a) => !hiddenAccounts.includes(a.index));
@@ -414,7 +423,7 @@ export default function Home() {
       } catch (e) {
         if (e.message !== "unauthorized") {
           if (!cached) setMessages([]);
-          setMessagesError(e.message);
+          setMessagesError(friendlyError(e.message));
         }
       }
     },
@@ -1062,6 +1071,17 @@ export default function Home() {
             ))}
           </div>
         )}
+
+        {accounts &&
+          accounts.length > 0 &&
+          !visibleAccounts.some((a) => a.ok) && (
+            <div className="notice">
+              No connected accounts. Your <code>TELEGRAM_SESSIONS</code> in
+              Vercel only contains revoked/broken sessions — remove the dead
+              strings, add a valid session (comma-separated), then redeploy.{" "}
+              <Link href="/setup">Generate a session string →</Link>
+            </div>
+          )}
 
         {!configured && (
           <div className="notice">
