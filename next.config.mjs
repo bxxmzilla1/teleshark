@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ["telegram"],
+  serverExternalPackages: ["telegram", "ffmpeg-static"],
 };
 
 export default nextConfig;

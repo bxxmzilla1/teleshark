@@ -8,8 +8,19 @@ A PWA (installable web app) that connects **multiple Telegram accounts** and let
 
 - Built with Next.js + [GramJS](https://gram.js.org/) (Telegram MTProto client).
 - Each account is represented by a **session string** stored in an env var.
-- The app is read-only: it shows chats and messages, it cannot send anything.
 - Optional app-wide password (`APP_PASSWORD`) protects access.
+
+## Chat features
+
+- **Media display** — photos, videos, GIFs and stickers render inline; voice notes get an inline player with a scrub bar (`/api/media` proxies the download, authenticated).
+- **Voice notes** — record a voice note in the browser (mic button) and send it as a real Telegram voice message. Recorded audio is converted to OGG/Opus server-side with a bundled `ffmpeg` binary so it shows as a round voice bubble.
+- **Clickable links** — URLs in messages render as clickable links. The link button (🔗) sends a labelled clickable link (e.g. the word "Tap here" linking to a URL) using Telegram HTML formatting.
+- **Reply** — reply to any message; the quoted message is shown above your reply.
+- **Forward** — forward any message to another chat, channel or group on the same account (picker lists your other chats).
+
+> These are interactive features, so the app can now **send** into chats. The official Telegram service chats (login codes) remain hidden server-side and can't be opened or sent to.
+
+**All Telegram credentials always come from Vercel environment variables** — nothing is hard-coded or stored in the app.
 
 ## Setup
 
@@ -70,5 +81,6 @@ npm run dev
 ## Security notes
 
 - Session strings grant **full access** to the Telegram accounts. Treat them like passwords; only store them in Vercel env vars.
-- Always set `APP_PASSWORD` — without it, anyone with the URL can read your chats.
+- Always set `APP_PASSWORD` — without it, anyone with the URL can read AND send from your chats.
 - The Telegram service chats (login codes) are filtered in the API layer (`lib/telegram.js`), not just in the UI, so they can't be fetched even by calling the API directly.
+- The app can send messages, voice notes, links and forwards. Automating a personal Telegram account is against Telegram's ToS and can get an account limited — keep the volume low.
