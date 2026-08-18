@@ -228,14 +228,33 @@ export default function Home() {
   }, []);
 
   const loadAccounts = useCallback(async () => {
-    setAccounts(null);
+    // Instant paint from the last known account list; refresh in background.
+    let hadCache = false;
+    try {
+      const cached = JSON.parse(localStorage.getItem("cache:accounts") || "null");
+      if (cached?.accounts?.length) {
+        setAccounts(cached.accounts);
+        setConfigured(cached.configured);
+        setLocked(false);
+        setChecking(false);
+        hadCache = true;
+      }
+    } catch {
+      // ignore malformed cache
+    }
+    if (!hadCache) setAccounts(null);
     try {
       const data = await api("/api/accounts");
       setAccounts(data.accounts);
       setConfigured(data.configured);
       setLocked(false);
+      try {
+        localStorage.setItem("cache:accounts", JSON.stringify(data));
+      } catch {
+        // ignore storage write errors
+      }
     } catch (e) {
-      if (e.message !== "unauthorized") {
+      if (e.message !== "unauthorized" && !hadCache) {
         setAccounts([]);
         setConfigured(false);
       }
@@ -250,16 +269,38 @@ export default function Home() {
 
   const loadDialogs = useCallback(
     async (accountIndex) => {
-      setDialogs(null);
       setDialogsError("");
       setActiveChat(null);
       setMessages(null);
+      // Instant paint from the last known chat list; refresh in background.
+      let hadCache = false;
+      try {
+        const cached = JSON.parse(
+          localStorage.getItem(`cache:dialogs:${accountIndex}`) || "null"
+        );
+        if (Array.isArray(cached) && cached.length > 0) {
+          dialogsFpRef.current = JSON.stringify(cached);
+          setDialogs(cached);
+          hadCache = true;
+        }
+      } catch {
+        // ignore malformed cache
+      }
+      if (!hadCache) setDialogs(null);
       try {
         const data = await api(`/api/dialogs?account=${accountIndex}`);
         dialogsFpRef.current = JSON.stringify(data.dialogs);
         setDialogs(data.dialogs);
+        try {
+          localStorage.setItem(
+            `cache:dialogs:${accountIndex}`,
+            JSON.stringify(data.dialogs)
+          );
+        } catch {
+          // ignore storage write errors (list can exceed the quota)
+        }
       } catch (e) {
-        if (e.message !== "unauthorized") {
+        if (e.message !== "unauthorized" && !hadCache) {
           setDialogs([]);
           setDialogsError(e.message);
         }
@@ -383,6 +424,11 @@ export default function Home() {
       if (fp !== dialogsFpRef.current) {
         dialogsFpRef.current = fp;
         setDialogs(data.dialogs);
+        try {
+          localStorage.setItem(`cache:dialogs:${activeAccount}`, fp);
+        } catch {
+          // ignore storage write errors
+        }
       }
     } catch {
       // transient poll error — ignore

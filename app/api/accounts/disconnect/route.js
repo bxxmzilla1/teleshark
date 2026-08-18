@@ -1,5 +1,10 @@
 import { checkAuth, unauthorized } from "@/lib/auth";
-import { getSessions, withClient, logOutSession } from "@/lib/telegram";
+import {
+  getSessions,
+  withClient,
+  logOutSession,
+  destroyPooled,
+} from "@/lib/telegram";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +32,8 @@ export async function POST(request) {
     await withClient(session, async (client) => {
       await logOutSession(client);
     });
+    // The pooled connection is dead after logout — drop it.
+    await destroyPooled(session);
     return Response.json({ ok: true, loggedOut: true });
   } catch (e) {
     // Session may already be dead (revoked elsewhere) — still report ok so
