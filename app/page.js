@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import VoiceNotePlayer from "./components/VoiceNotePlayer";
+import { enqueueRequest, loadBlobUrl } from "./lib/requestQueue";
 import VaultPanel, {
   getVaultItem,
   setVaultSaved,
@@ -94,10 +95,68 @@ function MessageText({ text, links }) {
 
 /** Turn raw Telegram errors into instructions the user can act on. */
 function friendlyError(msg) {
+  if (/AUTH_KEY_DUPLICATED/i.test(msg || "")) {
+    return "Telegram invalidated this session because it was used from several servers at once. Generate a fresh session string on the setup page and replace it in TELEGRAM_SESSIONS in Vercel.";
+  }
   if (/SESSION_REVOKED|AUTH_KEY_UNREGISTERED|SESSION_EXPIRED/i.test(msg || "")) {
     return "This account was disconnected — its session is no longer valid. Remove its session string from TELEGRAM_SESSIONS in Vercel and redeploy.";
   }
   return msg;
+}
+
+/** <img> that downloads through the request queue (one file at a time). */
+function QueuedImage({ src, alt = "", className, style, placeholder = false }) {
+  const [url, setUrl] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setUrl(null);
+    setFailed(false);
+    if (!src) return undefined;
+    loadBlobUrl(src).then(
+      (u) => alive && setUrl(u),
+      () => alive && setFailed(true)
+    );
+    return () => {
+      alive = false;
+    };
+  }, [src]);
+
+  if (!src || failed) return null;
+  if (!url) {
+    return placeholder ? (
+      <span
+        className={`media-loading${className ? ` ${className}` : ""}`}
+        style={style}
+      />
+    ) : null;
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={url} alt={alt} className={className} style={style} />;
+}
+
+/** Autoplaying gif that downloads through the request queue. */
+function QueuedVideo({ src, className }) {
+  const [url, setUrl] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    setUrl(null);
+    if (!src) return undefined;
+    loadBlobUrl(src).then(
+      (u) => alive && setUrl(u),
+      () => {}
+    );
+    return () => {
+      alive = false;
+    };
+  }, [src]);
+
+  if (!url) return <span className={`media-loading ${className || ""}`} />;
+  return (
+    <video src={url} autoPlay muted loop playsInline className={className} />
+  );
 }
 
 function bufferToBase64(buf) {
@@ -218,14 +277,18 @@ export default function Home() {
   }
 
   const api = useCallback(async (path, options = {}) => {
-    const pwd = localStorage.getItem("app_password") || "";
-    const res = await fetch(path, {
-      ...options,
-      headers: {
-        ...(options.body ? { "Content-Type": "application/json" } : {}),
-        "x-app-password": pwd,
-        ...(options.headers || {}),
-      },
+    // Serialized: see enqueueRequest — parallel calls get Telegram sessions
+    // revoked for suspicious multi-server use.
+    const res = await enqueueRequest(() => {
+      const pwd = localStorage.getItem("app_password") || "";
+      return fetch(path, {
+        ...options,
+        headers: {
+          ...(options.body ? { "Content-Type": "application/json" } : {}),
+          "x-app-password": pwd,
+          ...(options.headers || {}),
+        },
+      });
     });
     if (res.status === 401) {
       setLocked(true);
@@ -950,17 +1013,7 @@ export default function Home() {
         style={{ background: avatarColor(chat.id), ...style }}
       >
         {initials(displayName(chat))}
-        {chat.hasPhoto && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={avatarSrc(chat.id)}
-            alt=""
-            loading="lazy"
-            onError={(e) => {
-              e.currentTarget.style.display = "none";
-            }}
-          />
-        )}
+        {chat.hasPhoto && <QueuedImage src={avatarSrc(chat.id)} alt="" />}
       </span>
     );
   }
@@ -1279,14 +1332,11 @@ export default function Home() {
                     )}
 
                     {m.hasMedia && m.mediaKind === "sticker" && (
-                      <img
+                      <QueuedImage
                         src={mediaSrc(m.id)}
                         alt="Sticker"
                         className="msg-sticker"
-                        loading="lazy"
-                        onError={(e) => {
-                          e.currentTarget.style.display = "none";
-                        }}
+                        placeholder
                       />
                     )}
                     {m.hasMedia && m.mediaKind === "voice" && (
@@ -1295,15 +1345,7 @@ export default function Home() {
                       </div>
                     )}
                     {m.hasMedia && m.mediaKind === "gif" && (
-                      <video
-                        src={mediaSrc(m.id)}
-                        autoPlay
-                        muted
-                        loop
-                        playsInline
-                        preload="metadata"
-                        className="msg-media"
-                      />
+                      <QueuedVideo src={mediaSrc(m.id)} className="msg-media" />
                     )}
                     {m.hasMedia &&
                       m.mediaKind === "video" &&
@@ -1323,28 +1365,22 @@ export default function Home() {
                             setPlayingVideos((p) => ({ ...p, [m.id]: true }))
                           }
                         >
-                          <img
+                          <QueuedImage
                             src={mediaSrc(m.id)}
                             alt="Video"
                             className="msg-media"
-                            loading="lazy"
-                            onError={(e) => {
-                              e.currentTarget.style.display = "none";
-                            }}
+                            placeholder
                           />
                           <span className="play-overlay">▶</span>
                         </button>
                       ))}
                     {m.hasMedia &&
                       (m.mediaKind === "image" || m.mediaKind === "other") && (
-                        <img
+                        <QueuedImage
                           src={mediaSrc(m.id)}
                           alt=""
                           className="msg-media"
-                          loading="lazy"
-                          onError={(e) => {
-                            e.currentTarget.style.display = "none";
-                          }}
+                          placeholder
                         />
                       )}
 
