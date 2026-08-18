@@ -122,13 +122,21 @@ export default function Home() {
   const [replyTo, setReplyTo] = useState(null);
   const [linkForm, setLinkForm] = useState(null); // { label, url } or null
   const [forwardMsg, setForwardMsg] = useState(null);
+  const [forwardSelected, setForwardSelected] = useState([]);
+  const [forwardSearch, setForwardSearch] = useState("");
 
   // AI voice note state
   const [voicePreview, setVoicePreview] = useState(null); // { url, b64 }
   const [voiceBusy, setVoiceBusy] = useState(null); // "generating" | "sending" | null
 
   const messagesEndRef = useRef(null);
+  const messagesBoxRef = useRef(null);
+  const atBottomRef = useRef(true);
   const inputRef = useRef(null);
+  const dialogsFpRef = useRef("");
+  const messagesFpRef = useRef("");
+  const dialogsInFlightRef = useRef(false);
+  const messagesInFlightRef = useRef(false);
 
   function setAuthCookie(pwd) {
     const secure = location.protocol === "https:" ? "; secure" : "";
@@ -217,6 +225,7 @@ export default function Home() {
       setMessages(null);
       try {
         const data = await api(`/api/dialogs?account=${accountIndex}`);
+        dialogsFpRef.current = JSON.stringify(data.dialogs);
         setDialogs(data.dialogs);
       } catch (e) {
         if (e.message !== "unauthorized") {
@@ -244,6 +253,7 @@ export default function Home() {
             chat.id
           )}${topicQ}`
         );
+        messagesFpRef.current = JSON.stringify(data.messages);
         setMessages(data.messages);
         setMessagesError("");
       } catch (e) {
@@ -255,6 +265,64 @@ export default function Home() {
     },
     [api, activeAccount]
   );
+
+  // Silent 1-second poll of the open chat/topic — updates in place, only
+  // re-renders when the content actually changed (no spinner, no scroll jump).
+  const pollMessages = useCallback(async () => {
+    if (!activeChat || messagesInFlightRef.current) return;
+    if (activeChat.isForum && !activeTopic) return;
+    messagesInFlightRef.current = true;
+    try {
+      const topicQ = activeTopic ? `&topic=${activeTopic.id}` : "";
+      const data = await api(
+        `/api/messages?account=${activeAccount}&chat=${encodeURIComponent(
+          activeChat.id
+        )}${topicQ}`
+      );
+      const fp = JSON.stringify(data.messages);
+      if (fp !== messagesFpRef.current) {
+        messagesFpRef.current = fp;
+        setMessages(data.messages);
+      }
+    } catch {
+      // transient poll error — ignore, next tick retries
+    } finally {
+      messagesInFlightRef.current = false;
+    }
+  }, [api, activeAccount, activeChat, activeTopic]);
+
+  // Silent 1-second poll of the chat list for the active account.
+  const pollDialogs = useCallback(async () => {
+    if (dialogsInFlightRef.current) return;
+    if (!(accounts && accounts[activeAccount]?.ok)) return;
+    dialogsInFlightRef.current = true;
+    try {
+      const data = await api(`/api/dialogs?account=${activeAccount}`);
+      const fp = JSON.stringify(data.dialogs);
+      if (fp !== dialogsFpRef.current) {
+        dialogsFpRef.current = fp;
+        setDialogs(data.dialogs);
+      }
+    } catch {
+      // transient poll error — ignore
+    } finally {
+      dialogsInFlightRef.current = false;
+    }
+  }, [api, activeAccount, accounts]);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") pollDialogs();
+    }, 1000);
+    return () => clearInterval(t);
+  }, [pollDialogs]);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") pollMessages();
+    }, 1000);
+    return () => clearInterval(t);
+  }, [pollMessages]);
 
   const loadTopics = useCallback(
     async (chat) => {
@@ -285,6 +353,7 @@ export default function Home() {
     setActiveTopic(null);
     setTopics(null);
     setPlayingVideos({});
+    messagesFpRef.current = "";
     if (chat.isForum) loadTopics(chat);
     else loadMessages(chat);
   }
@@ -297,6 +366,7 @@ export default function Home() {
     setLinkForm(null);
     cancelVoice();
     setPlayingVideos({});
+    messagesFpRef.current = "";
     loadMessages(activeChat, topic.id);
   }
 
@@ -306,11 +376,20 @@ export default function Home() {
     setReplyTo(null);
     setLinkForm(null);
     cancelVoice();
+    messagesFpRef.current = "";
   }
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ block: "end" });
+    if (atBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ block: "end" });
+    }
   }, [messages]);
+
+  function onMessagesScroll(e) {
+    const el = e.currentTarget;
+    atBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 90;
+  }
 
   async function submitPassword(e) {
     e.preventDefault();
@@ -387,22 +466,43 @@ export default function Home() {
     }
   }
 
-  async function doForward(target) {
-    if (!forwardMsg || !target) return;
+  function openForward(m) {
+    setForwardMsg(m);
+    setForwardSelected([]);
+    setForwardSearch("");
+  }
+
+  function closeForward() {
+    setForwardMsg(null);
+    setForwardSelected([]);
+    setForwardSearch("");
+  }
+
+  function toggleForwardTarget(id) {
+    setForwardSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  async function doForwardSelected() {
+    if (!forwardMsg || forwardSelected.length === 0) return;
+    const targets = [...forwardSelected];
     try {
-      await api("/api/forward", {
-        method: "POST",
-        body: JSON.stringify({
-          account: activeAccount,
-          fromChat: activeChat.id,
-          messageId: forwardMsg.id,
-          toChat: target.id,
-        }),
-      });
-      setForwardMsg(null);
+      for (const toChat of targets) {
+        await api("/api/forward", {
+          method: "POST",
+          body: JSON.stringify({
+            account: activeAccount,
+            fromChat: activeChat.id,
+            messageId: forwardMsg.id,
+            toChat,
+          }),
+        });
+      }
     } catch (e) {
       if (e.message !== "unauthorized") setMessagesError(e.message);
-      setForwardMsg(null);
+    } finally {
+      closeForward();
     }
   }
 
@@ -720,7 +820,7 @@ export default function Home() {
               )}
             </div>
 
-            <div className="messages">
+            <div className="messages" ref={messagesBoxRef} onScroll={onMessagesScroll}>
               {messages === null && <div className="spinner" />}
               {messagesError && <div className="notice">{messagesError}</div>}
               {messages?.map((m) => (
@@ -743,7 +843,7 @@ export default function Home() {
                       title="Forward"
                       aria-label="Forward"
                       className="msg-action"
-                      onClick={() => setForwardMsg(m)}
+                      onClick={() => openForward(m)}
                     >
                       ⤴
                     </button>
@@ -979,38 +1079,82 @@ export default function Home() {
       </main>
 
       {forwardMsg && (
-        <div className="modal-backdrop" onClick={() => setForwardMsg(null)}>
+        <div className="modal-backdrop" onClick={closeForward}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Forward to…</h3>
               <button
                 type="button"
                 className="icon-btn"
-                onClick={() => setForwardMsg(null)}
+                onClick={closeForward}
                 aria-label="Close"
               >
                 ×
               </button>
             </div>
-            <p className="modal-sub">"{snippet(forwardMsg)}"</p>
+            <p className="modal-sub">&quot;{snippet(forwardMsg)}&quot;</p>
+            <div className="modal-search">
+              <input
+                type="text"
+                placeholder="Search by name or nickname…"
+                value={forwardSearch}
+                onChange={(e) => setForwardSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
             <div className="modal-list">
-              {(dialogs || [])
-                .filter((d) => d.id !== activeChat?.id)
-                .map((d) => (
-                  <button
-                    key={d.id}
-                    className="modal-item"
-                    onClick={() => void doForward(d)}
-                  >
-                    <span
-                      className="avatar"
-                      style={{ background: avatarColor(d.id), width: 34, height: 34, fontSize: 13 }}
+              {(() => {
+                const q = forwardSearch.trim().toLowerCase();
+                const list = (dialogs || [])
+                  .filter((d) => d.id !== activeChat?.id)
+                  .filter((d) => {
+                    if (!q) return true;
+                    return (
+                      displayName(d).toLowerCase().includes(q) ||
+                      (d.title || "").toLowerCase().includes(q)
+                    );
+                  });
+                if (list.length === 0) {
+                  return <div className="notice">No chats match.</div>;
+                }
+                return list.map((d) => {
+                  const selected = forwardSelected.includes(d.id);
+                  return (
+                    <button
+                      key={d.id}
+                      className={`modal-item${selected ? " selected" : ""}`}
+                      onClick={() => toggleForwardTarget(d.id)}
                     >
-                      {initials(displayName(d))}
-                    </span>
-                    <span className="modal-item-title">{displayName(d)}</span>
-                  </button>
-                ))}
+                      <span
+                        className="avatar"
+                        style={{
+                          background: avatarColor(d.id),
+                          width: 34,
+                          height: 34,
+                          fontSize: 13,
+                        }}
+                      >
+                        {initials(displayName(d))}
+                      </span>
+                      <span className="modal-item-title">{displayName(d)}</span>
+                      <span className="modal-check">{selected ? "✓" : ""}</span>
+                    </button>
+                  );
+                });
+              })()}
+            </div>
+            <div className="modal-footer">
+              <button className="btn ghost" onClick={closeForward}>
+                Cancel
+              </button>
+              <button
+                className="btn"
+                onClick={() => void doForwardSelected()}
+                disabled={forwardSelected.length === 0}
+              >
+                Forward
+                {forwardSelected.length > 0 ? ` (${forwardSelected.length})` : ""}
+              </button>
             </div>
           </div>
         </div>

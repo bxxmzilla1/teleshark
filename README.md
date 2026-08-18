@@ -16,7 +16,8 @@ A PWA (installable web app) that connects **multiple Telegram accounts** and let
 - **AI voice notes (text-to-speech)** — type your message, tap the mic to turn it into an ElevenLabs AI voice, preview it, then send it as a real Telegram voice message (round bubble). The generated MP3 is converted to OGG/Opus server-side with a bundled `ffmpeg` binary. Supports v3 audio tags like `[giggles]` or `[whispers]`.
 - **Clickable links** — URLs in messages render as clickable links. The link button (🔗) sends a **bold** labelled clickable link (e.g. the word "Tap here" linking to a URL) using Telegram HTML formatting, with the link preview card suppressed.
 - **Reply** — reply to any message; the quoted message is shown above your reply.
-- **Forward** — forward any message to another chat, channel or group on the same account (picker lists your other chats).
+- **Forward** — forward any message to one or more chats on the same account. The picker lets you search by name or nickname, select targets (highlighted), and press Forward.
+- **Live updates** — the open chat and the chat list refresh every second, updating in place without flicker or scroll jumps.
 - **Group topics** — forum groups show their topic list when opened; pick a topic to read and post within that thread.
 - **Nicknames** — give any chat a custom nickname (pencil icon in the chat header). Nicknames are stored locally on your device and shown in the list, header and forward picker.
 - **Clean inbox** — archived chats and chats with blocked users are hidden from the list. Videos show a tappable thumbnail and stream the full clip only when you play them.
