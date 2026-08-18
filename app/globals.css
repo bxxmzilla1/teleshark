@@ -1,13 +1,15 @@
 :root {
-  --bg: #0e1621;
-  --bg-2: #17212b;
-  --bg-3: #202b36;
-  --accent: #2ea6ff;
-  --accent-dim: #1d4e75;
-  --text: #f1f5f9;
-  --text-dim: #7f91a4;
-  --out-bubble: #2b5278;
-  --in-bubble: #182533;
+  --bg: #0c0a14;
+  --bg-2: #131022;
+  --bg-3: #1e1933;
+  --line: #251d3d;
+  --accent: #8b5cf6;
+  --accent-2: #d946ef;
+  --accent-dim: #4a3580;
+  --text: #f3f1fa;
+  --text-dim: #9d93bd;
+  --out-bubble: #5b3aa8;
+  --in-bubble: #191430;
   --danger: #ef5b5b;
   --green: #34c759;
 }
@@ -34,7 +36,7 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(var(--accent-dim), #163a58);
+  background: linear-gradient(var(--accent-dim), #37276b);
   border-radius: 8px;
   border: 2px solid transparent;
   background-clip: padding-box;
@@ -155,7 +157,7 @@ input {
   width: 380px;
   min-width: 300px;
   background: var(--bg-2);
-  border-right: 1px solid #0b121b;
+  border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
 }
@@ -165,7 +167,7 @@ input {
   display: flex;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid #0b121b;
+  border-bottom: 1px solid var(--line);
 }
 
 .sidebar-header h1 {
@@ -195,7 +197,7 @@ input {
   gap: 6px;
   padding: 10px 12px;
   overflow-x: auto;
-  border-bottom: 1px solid #0b121b;
+  border-bottom: 1px solid var(--line);
   scrollbar-width: none;
 }
 
@@ -281,6 +283,8 @@ input {
 }
 
 .avatar {
+  position: relative;
+  overflow: hidden;
   width: 48px;
   height: 48px;
   border-radius: 50%;
@@ -291,6 +295,15 @@ input {
   font-weight: 600;
   font-size: 17px;
   color: #fff;
+}
+
+/* Real profile photo layered over the colored initials (hidden on error). */
+.avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .chat-body {
@@ -368,7 +381,7 @@ input {
   gap: 10px;
   padding: 10px 14px;
   background: var(--bg-2);
-  border-bottom: 1px solid #0b121b;
+  border-bottom: 1px solid var(--line);
   min-height: 56px;
 }
 
@@ -534,7 +547,7 @@ input {
 
 .reply-quote {
   border-left: 2px solid var(--accent);
-  background: rgba(46, 166, 255, 0.12);
+  background: rgba(139, 92, 246, 0.12);
   border-radius: 6px;
   padding: 4px 8px;
   margin-bottom: 5px;
@@ -680,7 +693,7 @@ input {
   gap: 10px;
   padding: 10px 12px;
   background: var(--bg-2);
-  border-top: 1px solid #0b121b;
+  border-top: 1px solid var(--line);
   shrink: 0;
 }
 
@@ -733,7 +746,7 @@ input {
 
 /* ---------- composer ---------- */
 .composer {
-  border-top: 1px solid #0b121b;
+  border-top: 1px solid var(--line);
   padding: 10px 12px;
   padding-bottom: max(10px, env(safe-area-inset-bottom));
   display: flex;
@@ -846,7 +859,7 @@ input {
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px;
-  border-bottom: 1px solid #0b121b;
+  border-bottom: 1px solid var(--line);
 }
 
 .modal-header h3 {
@@ -931,7 +944,7 @@ input {
   gap: 10px;
   justify-content: flex-end;
   padding: 12px 16px;
-  border-top: 1px solid #0b121b;
+  border-top: 1px solid var(--line);
 }
 
 .modal-footer .btn {
@@ -1070,7 +1083,7 @@ input {
   width: 340px;
   min-width: 300px;
   background: var(--bg-2);
-  border-left: 1px solid #0b121b;
+  border-left: 1px solid var(--line);
   display: flex;
   flex-direction: column;
 }
@@ -1080,7 +1093,7 @@ input {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-bottom: 1px solid #0b121b;
+  border-bottom: 1px solid var(--line);
 }
 
 .vault-header h2 {
@@ -1092,7 +1105,7 @@ input {
   width: 30px;
   height: 30px;
   border-radius: 9px;
-  background: linear-gradient(135deg, var(--accent), #a695e7);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1105,7 +1118,7 @@ input {
   flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid #0b121b;
+  border-bottom: 1px solid var(--line);
 }
 
 .vault-upload {
@@ -1150,7 +1163,7 @@ input {
 }
 
 .vault-album-item:hover {
-  background: #26313d;
+  background: #292144;
 }
 
 .vault-album-icon {
@@ -1165,7 +1178,7 @@ input {
 }
 
 .vault-album-icon.grad {
-  background: linear-gradient(135deg, var(--accent), #a695e7);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
   color: #fff;
 }
 
@@ -1379,7 +1392,7 @@ input {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: rgba(46, 166, 255, 0.9);
+  background: rgba(139, 92, 246, 0.9);
   color: #fff;
   display: flex;
   align-items: center;
@@ -1446,7 +1459,7 @@ input {
   width: 52px;
   height: 52px;
   border-radius: 16px;
-  background: linear-gradient(135deg, var(--accent), #a695e7);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1514,7 +1527,7 @@ input {
 .drop-sending {
   padding: 8px 14px;
   background: var(--bg-2);
-  border-top: 1px solid #0b121b;
+  border-top: 1px solid var(--line);
   color: var(--accent);
   font-size: 13px;
   font-weight: 600;
@@ -1539,14 +1552,11 @@ input {
   transition: width 0.3s;
 }
 
+/* The vault is a permanent right column; on narrow screens there's no room
+   for it, so it steps aside and the chat keeps the full width. */
 @media (max-width: 900px) {
   .vault {
-    position: fixed;
-    inset: 0;
-    width: 100%;
-    min-width: 0;
-    z-index: 50;
-    border-left: none;
+    display: none;
   }
 }
 

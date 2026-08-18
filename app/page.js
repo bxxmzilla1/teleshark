@@ -136,7 +136,6 @@ export default function Home() {
   const [playingVideos, setPlayingVideos] = useState({});
   const [nicknames, setNicknames] = useState({});
   const [hiddenAccounts, setHiddenAccounts] = useState([]);
-  const [vaultOpen, setVaultOpen] = useState(false);
   const [dropActive, setDropActive] = useState(false);
   // null, or { percent } while vault media is uploading/sending to Telegram
   const [sendProgress, setSendProgress] = useState(null);
@@ -323,6 +322,23 @@ export default function Home() {
       loadDialogs(activeAccount);
     }
   }, [accounts, activeAccount, loadDialogs]);
+
+  // "Hidden" only makes sense for dead (logged-out) sessions. If a working
+  // session now occupies a hidden slot — e.g. TELEGRAM_SESSIONS was edited in
+  // Vercel and the indexes shifted — unhide it so new accounts always appear.
+  useEffect(() => {
+    if (!accounts || accounts.length === 0) return;
+    setHiddenAccounts((prev) => {
+      const next = prev.filter((i) => accounts[i] && !accounts[i].ok);
+      if (next.length === prev.length) return prev;
+      try {
+        localStorage.setItem("hiddenAccounts", JSON.stringify(next));
+      } catch {
+        // ignore storage write errors
+      }
+      return next;
+    });
+  }, [accounts]);
 
   // If the active account was disconnected (hidden), fall back to the first
   // visible one.
@@ -913,6 +929,33 @@ export default function Home() {
     )}&id=${id}`;
   }
 
+  function avatarSrc(chatId) {
+    return `/api/avatar?account=${activeAccount}&chat=${encodeURIComponent(chatId)}`;
+  }
+
+  /** Colored initials with the real profile photo layered on top when set. */
+  function renderAvatar(chat, style = {}) {
+    return (
+      <span
+        className="avatar"
+        style={{ background: avatarColor(chat.id), ...style }}
+      >
+        {initials(displayName(chat))}
+        {chat.hasPhoto && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={avatarSrc(chat.id)}
+            alt=""
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
+          />
+        )}
+      </span>
+    );
+  }
+
   function snippet(m) {
     if (!m) return "Message";
     if (m.text) return m.text.length > 80 ? `${m.text.slice(0, 80)}…` : m.text;
@@ -961,9 +1004,7 @@ export default function Home() {
   );
 
   return (
-    <div
-      className={`app${activeChat ? " chat-open" : ""}${vaultOpen ? " vault-open" : ""}`}
-    >
+    <div className={`app${activeChat ? " chat-open" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-header">
           <h1>MultiGram</h1>
@@ -976,14 +1017,6 @@ export default function Home() {
             onClick={() => loadDialogs(activeAccount)}
           >
             ⟳
-          </button>
-          <button
-            className={`icon-btn${vaultOpen ? " on" : ""}`}
-            title="Vault"
-            aria-label="Toggle vault"
-            onClick={() => setVaultOpen((v) => !v)}
-          >
-            🔒
           </button>
         </div>
 
@@ -1048,9 +1081,7 @@ export default function Home() {
               className={`chat-item${activeChat?.id === chat.id ? " active" : ""}`}
               onClick={() => openChat(chat)}
             >
-              <span className="avatar" style={{ background: avatarColor(chat.id) }}>
-                {initials(chat.title)}
-              </span>
+              {renderAvatar(chat)}
               <span className="chat-body">
                 <span className="chat-top">
                   <span className="chat-title">
@@ -1083,17 +1114,7 @@ export default function Home() {
               <button className="icon-btn back-btn" onClick={() => setActiveChat(null)}>
                 ←
               </button>
-              <span
-                className="avatar"
-                style={{
-                  background: avatarColor(activeChat.id),
-                  width: 38,
-                  height: 38,
-                  fontSize: 14,
-                }}
-              >
-                {initials(activeChat.title)}
-              </span>
+              {renderAvatar(activeChat, { width: 38, height: 38, fontSize: 14 })}
               <div className="header-titles">
                 <h2>{displayName(activeChat)}</h2>
                 <span className="header-sub">Topics</span>
@@ -1106,15 +1127,6 @@ export default function Home() {
                 onClick={() => editNickname(activeChat)}
               >
                 ✎
-              </button>
-              <button
-                type="button"
-                className={`icon-btn${vaultOpen ? " on" : ""}`}
-                title="Vault"
-                aria-label="Toggle vault"
-                onClick={() => setVaultOpen((v) => !v)}
-              >
-                🔒
               </button>
             </div>
 
@@ -1160,17 +1172,21 @@ export default function Home() {
               >
                 ←
               </button>
-              <span
-                className="avatar"
-                style={{
-                  background: avatarColor(activeChat.id),
-                  width: 38,
-                  height: 38,
-                  fontSize: 14,
-                }}
-              >
-                {initials(activeTopic ? activeTopic.title : displayName(activeChat))}
-              </span>
+              {activeTopic ? (
+                <span
+                  className="avatar"
+                  style={{
+                    background: avatarColor(activeChat.id),
+                    width: 38,
+                    height: 38,
+                    fontSize: 14,
+                  }}
+                >
+                  {initials(activeTopic.title)}
+                </span>
+              ) : (
+                renderAvatar(activeChat, { width: 38, height: 38, fontSize: 14 })
+              )}
               <div className="header-titles">
                 <h2>{activeTopic ? activeTopic.title : displayName(activeChat)}</h2>
                 {activeTopic && (
@@ -1188,15 +1204,6 @@ export default function Home() {
                   ✎
                 </button>
               )}
-              <button
-                type="button"
-                className={`icon-btn${vaultOpen ? " on" : ""}`}
-                title="Vault"
-                aria-label="Toggle vault"
-                onClick={() => setVaultOpen((v) => !v)}
-              >
-                🔒
-              </button>
             </div>
 
             <div
@@ -1478,19 +1485,16 @@ export default function Home() {
         )}
       </main>
 
-      {vaultOpen && (
-        <VaultPanel
-          canSend={canVaultSend}
-          accountKey={activeAccount}
-          sendHint={
-            activeChat?.isForum && !activeTopic
-              ? "Open a topic to send media into it."
-              : "Open a chat to send media into it."
-          }
-          onSend={sendVaultItem}
-          onClose={() => setVaultOpen(false)}
-        />
-      )}
+      <VaultPanel
+        canSend={canVaultSend}
+        accountKey={activeAccount}
+        sendHint={
+          activeChat?.isForum && !activeTopic
+            ? "Open a topic to send media into it."
+            : "Open a chat to send media into it."
+        }
+        onSend={sendVaultItem}
+      />
 
       {forwardMsg && (
         <div className="modal-backdrop" onClick={closeForward}>
@@ -1539,17 +1543,7 @@ export default function Home() {
                       className={`modal-item${selected ? " selected" : ""}`}
                       onClick={() => toggleForwardTarget(d.id)}
                     >
-                      <span
-                        className="avatar"
-                        style={{
-                          background: avatarColor(d.id),
-                          width: 34,
-                          height: 34,
-                          fontSize: 13,
-                        }}
-                      >
-                        {initials(displayName(d))}
-                      </span>
+                      {renderAvatar(d, { width: 34, height: 34, fontSize: 13 })}
                       <span className="modal-item-title">{displayName(d)}</span>
                       <span className="modal-check">{selected ? "✓" : ""}</span>
                     </button>

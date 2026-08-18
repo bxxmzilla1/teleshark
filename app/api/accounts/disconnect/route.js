@@ -4,6 +4,7 @@ import {
   withClient,
   logOutSession,
   evictPooledClient,
+  evictCachedAccountInfo,
 } from "@/lib/telegram";
 
 export const runtime = "nodejs";
@@ -33,11 +34,13 @@ export async function POST(request) {
       await logOutSession(client);
     });
     await evictPooledClient(session);
+    evictCachedAccountInfo(session);
     return Response.json({ ok: true, loggedOut: true });
   } catch (e) {
     // Session may already be dead (revoked elsewhere) — still report ok so
     // the client can hide the account.
     await evictPooledClient(session);
+    evictCachedAccountInfo(session);
     return Response.json({
       ok: true,
       loggedOut: false,

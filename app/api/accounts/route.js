@@ -1,5 +1,10 @@
 import { checkAuth, unauthorized } from "@/lib/auth";
-import { getSessions, withClient } from "@/lib/telegram";
+import {
+  getSessions,
+  withClient,
+  getCachedAccountInfo,
+  setCachedAccountInfo,
+} from "@/lib/telegram";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,16 +12,14 @@ export const maxDuration = 60;
 
 // Account identity rarely changes: cache successful checks for 5 minutes and
 // failures for 1 minute, so a dead session doesn't slow every startup down.
-const accountsCache =
-  globalThis.__mgAccountsCache ?? (globalThis.__mgAccountsCache = new Map());
 const OK_TTL = 5 * 60 * 1000;
 const ERR_TTL = 60 * 1000;
 
 async function checkAccount(session, index) {
-  const hit = accountsCache.get(session);
-  if (hit && Date.now() - hit.ts < (hit.data.ok ? OK_TTL : ERR_TTL)) {
-    return { ...hit.data, index };
-  }
+  const cachedOk = getCachedAccountInfo(session, OK_TTL);
+  if (cachedOk?.ok) return { ...cachedOk, index };
+  const cachedErr = getCachedAccountInfo(session, ERR_TTL);
+  if (cachedErr && !cachedErr.ok) return { ...cachedErr, index };
 
   const attempt = withClient(session, async (client) => {
     const me = await client.getMe();
@@ -42,7 +45,7 @@ async function checkAccount(session, index) {
   );
 
   const data = await Promise.race([attempt, timeout]);
-  accountsCache.set(session, { data, ts: Date.now() });
+  setCachedAccountInfo(session, data);
   return data;
 }
 

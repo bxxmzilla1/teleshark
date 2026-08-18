@@ -49,6 +49,10 @@ export async function GET(request) {
           type: d.isUser ? "user" : d.isGroup ? "group" : "channel",
           pinned: Boolean(d.pinned),
           isForum: Boolean(d.entity?.forum),
+          hasPhoto: Boolean(
+            d.entity?.photo &&
+              !String(d.entity.photo.className || "").includes("Empty")
+          ),
         }));
     });
     return Response.json({ dialogs });

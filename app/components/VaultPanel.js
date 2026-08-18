@@ -125,13 +125,7 @@ function downloadItem(item) {
   a.remove();
 }
 
-export default function VaultPanel({
-  canSend,
-  sendHint,
-  onSend,
-  onClose,
-  accountKey,
-}) {
+export default function VaultPanel({ canSend, sendHint, onSend, accountKey }) {
   const [items, setItems] = useState(null);
   const [albums, setAlbums] = useState([]);
   // null = album list view, "all" = the built-in All album, otherwise an album
@@ -362,15 +356,6 @@ export default function VaultPanel({
       <div className="vault-header">
         <span className="vault-lock">🔒</span>
         <h2>Vault</h2>
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={onClose}
-          title="Close vault"
-          aria-label="Close vault"
-        >
-          ×
-        </button>
       </div>
 
       {!openAlbum ? (
