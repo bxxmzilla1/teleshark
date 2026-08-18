@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import VoiceNotePlayer from "./components/VoiceNotePlayer";
-import VaultPanel from "./components/VaultPanel";
+import VaultPanel, {
+  getVaultItem,
+  VAULT_DRAG_TYPE,
+} from "./components/VaultPanel";
 
 const AVATAR_COLORS = [
   "#e17076", "#7bc862", "#e5ca77", "#65aadd",
@@ -118,6 +121,8 @@ export default function Home() {
   const [nicknames, setNicknames] = useState({});
   const [hiddenAccounts, setHiddenAccounts] = useState([]);
   const [vaultOpen, setVaultOpen] = useState(false);
+  const [dropActive, setDropActive] = useState(false);
+  const [dropSending, setDropSending] = useState(false);
 
   // composer state
   const [text, setText] = useState("");
@@ -662,6 +667,57 @@ export default function Home() {
     setTimeout(() => loadMessages(activeChat, activeTopic?.id ?? null), 1000);
   }
 
+  // ---- Drag & drop into the chat (vault tiles or files from the device) ----
+  function chatDropAllowed(e) {
+    const types = e.dataTransfer?.types || [];
+    return types.includes(VAULT_DRAG_TYPE) || types.includes("Files");
+  }
+
+  function onChatDragOver(e) {
+    if (!chatDropAllowed(e) || !canVaultSend) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setDropActive(true);
+  }
+
+  function onChatDragLeave(e) {
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    setDropActive(false);
+  }
+
+  async function onChatDrop(e) {
+    if (!chatDropAllowed(e) || !canVaultSend) return;
+    e.preventDefault();
+    setDropActive(false);
+    setMessagesError("");
+    const vaultId = e.dataTransfer.getData(VAULT_DRAG_TYPE);
+    const files = Array.from(e.dataTransfer.files || []);
+    setDropSending(true);
+    try {
+      if (vaultId) {
+        const item = await getVaultItem(vaultId);
+        if (!item) throw new Error("Could not read the vault item");
+        await sendVaultItem(item);
+      } else {
+        const media = files.filter(
+          (f) => f.type.startsWith("image/") || f.type.startsWith("video/")
+        );
+        if (media.length === 0) throw new Error("Drop a photo or video file");
+        for (const f of media) {
+          await sendVaultItem({
+            blob: f,
+            name: f.name,
+            kind: f.type.startsWith("video/") ? "video" : "image",
+          });
+        }
+      }
+    } catch (err) {
+      if (err.message !== "unauthorized") setMessagesError(err.message);
+    } finally {
+      setDropSending(false);
+    }
+  }
+
   function mediaSrc(id) {
     return `/api/media?account=${activeAccount}&chat=${encodeURIComponent(
       activeChat.id
@@ -954,7 +1010,14 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="messages" ref={messagesBoxRef} onScroll={onMessagesScroll}>
+            <div
+              className={`messages${dropActive ? " drop-active" : ""}`}
+              ref={messagesBoxRef}
+              onScroll={onMessagesScroll}
+              onDragOver={onChatDragOver}
+              onDragLeave={onChatDragLeave}
+              onDrop={(e) => void onChatDrop(e)}
+            >
               {messages === null && <div className="spinner" />}
               {messagesError && <div className="notice">{messagesError}</div>}
               {messages?.map((m) => (
@@ -1080,6 +1143,10 @@ export default function Home() {
               ))}
               <div ref={messagesEndRef} />
             </div>
+
+            {dropSending && (
+              <div className="drop-sending">Sending media to Telegram…</div>
+            )}
 
             {replyTo && (
               <div className="reply-bar">

@@ -1113,6 +1113,174 @@ input {
   padding: 11px;
 }
 
+.vault-toolbar-row {
+  display: flex;
+  gap: 8px;
+}
+
+.vault-toolbar-row .vault-upload {
+  flex: 1;
+  width: auto;
+}
+
+.vault-newalbum {
+  padding: 11px 14px;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+/* ---------- vault albums ---------- */
+.vault-album-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.vault-album-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: var(--bg-3);
+  border-radius: 14px;
+  padding: 10px 12px;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.vault-album-item:hover {
+  background: #26313d;
+}
+
+.vault-album-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.vault-album-icon.grad {
+  background: linear-gradient(135deg, var(--accent), #a695e7);
+  color: #fff;
+}
+
+.vault-album-icon.plain {
+  background: var(--bg-2);
+}
+
+.vault-album-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.vault-album-name {
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-album-count {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.vault-album-chevron {
+  color: var(--text-dim);
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.vault-album-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vault-album-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.icon-btn.danger {
+  color: var(--danger);
+}
+
+/* ---------- vault select mode ---------- */
+.vault-select-panel {
+  background: var(--bg-3);
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vault-select-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.vault-delete-btn {
+  padding: 9px;
+  font-size: 13px;
+}
+
+.vault-album-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 8px;
+  width: 100%;
+  text-align: left;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+
+.vault-album-check:hover {
+  background: var(--bg-2);
+}
+
+.vault-album-check .vault-album-name {
+  font-weight: 500;
+}
+
+.vault-checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 2px solid var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1;
+  color: #fff;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.vault-checkbox.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.vault-checkbox.some {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
 .vault-filters {
   display: flex;
   gap: 6px;
@@ -1158,6 +1326,41 @@ input {
   overflow: hidden;
   background: var(--bg-3);
   cursor: pointer;
+}
+
+.vault-tile[draggable="true"] {
+  cursor: grab;
+}
+
+.vault-tile[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.vault-tile.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.vault-check {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.vault-check.on {
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .vault-tile img,
@@ -1283,6 +1486,20 @@ input {
 
 .btn.ghost.danger {
   color: var(--danger);
+}
+
+/* Chat drop target highlight while dragging vault media or files over it. */
+.messages.drop-active {
+  box-shadow: inset 0 0 0 3px var(--accent);
+}
+
+.drop-sending {
+  padding: 8px 14px;
+  background: var(--bg-2);
+  border-top: 1px solid #0b121b;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 @media (max-width: 900px) {
