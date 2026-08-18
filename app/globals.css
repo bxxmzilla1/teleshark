@@ -18,15 +18,15 @@
   padding: 0;
 }
 
-/* Themed scrollbars (match the dark Telegram-style palette). */
+/* Themed scrollbars (match the app's blue accent palette). */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--bg-3) transparent;
+  scrollbar-color: var(--accent-dim) transparent;
 }
 
 ::-webkit-scrollbar {
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -34,15 +34,19 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-3);
-  border-radius: 6px;
+  background: linear-gradient(var(--accent-dim), #163a58);
+  border-radius: 8px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-dim);
+  background: var(--accent);
   background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 html,
