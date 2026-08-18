@@ -18,6 +18,7 @@ export async function GET(request) {
   const accountIndex = parseInt(searchParams.get("account") || "0", 10);
   const chatId = searchParams.get("chat");
   const id = Number(searchParams.get("id"));
+  const full = searchParams.get("full") === "1";
   const session = getSessions()[accountIndex];
   if (!session || !chatId || !Number.isFinite(id) || id <= 0) {
     return Response.json({ error: "account, chat and id required" }, { status: 400 });
@@ -27,7 +28,7 @@ export async function GET(request) {
     const file = await withClient(session, async (client) => {
       const dialog = await findDialogEntity(client, chatId);
       if (!dialog || isBlockedEntity(dialog.entity)) return null;
-      return downloadMessageMedia(client, dialog.entity, id);
+      return downloadMessageMedia(client, dialog.entity, id, { full });
     });
     if (!file) return Response.json({ error: "No media" }, { status: 404 });
     return new Response(new Uint8Array(file.data), {

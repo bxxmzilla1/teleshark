@@ -18,6 +18,8 @@ A PWA (installable web app) that connects **multiple Telegram accounts** and let
 - **Reply** — reply to any message; the quoted message is shown above your reply.
 - **Forward** — forward any message to another chat, channel or group on the same account (picker lists your other chats).
 - **Group topics** — forum groups show their topic list when opened; pick a topic to read and post within that thread.
+- **Nicknames** — give any chat a custom nickname (pencil icon in the chat header). Nicknames are stored locally on your device and shown in the list, header and forward picker.
+- **Clean inbox** — archived chats and chats with blocked users are hidden from the list. Videos show a tappable thumbnail and stream the full clip only when you play them.
 
 > These are interactive features, so the app can now **send** into chats. The official Telegram service chats (login codes) remain hidden server-side and can't be opened or sent to.
 

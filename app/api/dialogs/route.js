@@ -1,5 +1,11 @@
 import { checkAuth, unauthorized } from "@/lib/auth";
-import { getSessions, withClient, isBlockedEntity, previewText } from "@/lib/telegram";
+import {
+  getSessions,
+  withClient,
+  isBlockedEntity,
+  previewText,
+  getBlockedIds,
+} from "@/lib/telegram";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,9 +24,21 @@ export async function GET(request) {
 
   try {
     const dialogs = await withClient(session, async (client) => {
-      const result = await client.getDialogs({ limit: 60 });
+      const [result, blockedIds] = await Promise.all([
+        client.getDialogs({ limit: 100 }),
+        getBlockedIds(client),
+      ]);
       return result
-        .filter((d) => !isBlockedEntity(d.entity))
+        .filter((d) => {
+          // Hide the login-code service chats.
+          if (isBlockedEntity(d.entity)) return false;
+          // Hide archived chats (Telegram's archive folder is id 1).
+          if (d.archived || d.folderId === 1) return false;
+          // Hide chats with blocked users.
+          const eid = d.entity?.id?.toString();
+          if (eid && blockedIds.has(eid)) return false;
+          return true;
+        })
         .map((d) => ({
           id: d.id?.toString(),
           title: d.title || d.name || "Unknown",

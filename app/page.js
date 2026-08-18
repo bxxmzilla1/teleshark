@@ -113,6 +113,8 @@ export default function Home() {
   const [messagesError, setMessagesError] = useState("");
   const [topics, setTopics] = useState(null);
   const [activeTopic, setActiveTopic] = useState(null);
+  const [playingVideos, setPlayingVideos] = useState({});
+  const [nicknames, setNicknames] = useState({});
 
   // composer state
   const [text, setText] = useState("");
@@ -131,6 +133,40 @@ export default function Home() {
   function setAuthCookie(pwd) {
     const secure = location.protocol === "https:" ? "; secure" : "";
     document.cookie = `app_password=${encodeURIComponent(pwd)}; path=/; max-age=2592000; samesite=lax${secure}`;
+  }
+
+  // Per-user nicknames, stored locally on this device.
+  useEffect(() => {
+    try {
+      setNicknames(JSON.parse(localStorage.getItem("nicknames") || "{}"));
+    } catch {
+      // ignore malformed storage
+    }
+  }, []);
+
+  const displayName = (chat) =>
+    chat ? nicknames[`${activeAccount}:${chat.id}`] || chat.title : "";
+
+  function editNickname(chat) {
+    if (!chat) return;
+    const key = `${activeAccount}:${chat.id}`;
+    const current = nicknames[key] || "";
+    const val = window.prompt(
+      `Nickname for "${chat.title}" (leave empty to remove):`,
+      current
+    );
+    if (val === null) return;
+    setNicknames((prev) => {
+      const next = { ...prev };
+      if (val.trim()) next[key] = val.trim();
+      else delete next[key];
+      try {
+        localStorage.setItem("nicknames", JSON.stringify(next));
+      } catch {
+        // ignore storage write errors
+      }
+      return next;
+    });
   }
 
   const api = useCallback(async (path, options = {}) => {
@@ -248,6 +284,7 @@ export default function Home() {
     cancelVoice();
     setActiveTopic(null);
     setTopics(null);
+    setPlayingVideos({});
     if (chat.isForum) loadTopics(chat);
     else loadMessages(chat);
   }
@@ -259,6 +296,7 @@ export default function Home() {
     setReplyTo(null);
     setLinkForm(null);
     cancelVoice();
+    setPlayingVideos({});
     loadMessages(activeChat, topic.id);
   }
 
@@ -556,7 +594,7 @@ export default function Home() {
                 <span className="chat-top">
                   <span className="chat-title">
                     {chat.pinned ? "📌 " : ""}
-                    {chat.title}
+                    {displayName(chat)}
                   </span>
                   <span className="chat-time">{formatTime(chat.lastDate)}</span>
                 </span>
@@ -596,9 +634,18 @@ export default function Home() {
                 {initials(activeChat.title)}
               </span>
               <div className="header-titles">
-                <h2>{activeChat.title}</h2>
+                <h2>{displayName(activeChat)}</h2>
                 <span className="header-sub">Topics</span>
               </div>
+              <button
+                type="button"
+                className="icon-btn"
+                title="Set nickname"
+                aria-label="Set nickname"
+                onClick={() => editNickname(activeChat)}
+              >
+                ✎
+              </button>
             </div>
 
             <div className="topic-list">
@@ -652,14 +699,25 @@ export default function Home() {
                   fontSize: 14,
                 }}
               >
-                {initials(activeTopic ? activeTopic.title : activeChat.title)}
+                {initials(activeTopic ? activeTopic.title : displayName(activeChat))}
               </span>
               <div className="header-titles">
-                <h2>{activeTopic ? activeTopic.title : activeChat.title}</h2>
+                <h2>{activeTopic ? activeTopic.title : displayName(activeChat)}</h2>
                 {activeTopic && (
-                  <span className="header-sub">{activeChat.title}</span>
+                  <span className="header-sub">{displayName(activeChat)}</span>
                 )}
               </div>
+              {!activeTopic && (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Set nickname"
+                  aria-label="Set nickname"
+                  onClick={() => editNickname(activeChat)}
+                >
+                  ✎
+                </button>
+              )}
             </div>
 
             <div className="messages">
@@ -734,14 +792,36 @@ export default function Home() {
                         className="msg-media"
                       />
                     )}
-                    {m.hasMedia && m.mediaKind === "video" && (
-                      <video
-                        src={mediaSrc(m.id)}
-                        controls
-                        preload="metadata"
-                        className="msg-media"
-                      />
-                    )}
+                    {m.hasMedia &&
+                      m.mediaKind === "video" &&
+                      (playingVideos[m.id] ? (
+                        <video
+                          src={`${mediaSrc(m.id)}&full=1`}
+                          controls
+                          autoPlay
+                          preload="metadata"
+                          className="msg-media"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          className="video-poster"
+                          onClick={() =>
+                            setPlayingVideos((p) => ({ ...p, [m.id]: true }))
+                          }
+                        >
+                          <img
+                            src={mediaSrc(m.id)}
+                            alt="Video"
+                            className="msg-media"
+                            loading="lazy"
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                            }}
+                          />
+                          <span className="play-overlay">▶</span>
+                        </button>
+                      ))}
                     {m.hasMedia &&
                       (m.mediaKind === "image" || m.mediaKind === "other") && (
                         <img
@@ -772,7 +852,7 @@ export default function Home() {
                 <span className="reply-icon">↩</span>
                 <div className="reply-bar-body">
                   <p className="reply-bar-title">
-                    Replying to {replyTo.out ? "yourself" : activeChat.title}
+                    Replying to {replyTo.out ? "yourself" : displayName(activeChat)}
                   </p>
                   <p className="reply-bar-text">{snippet(replyTo)}</p>
                 </div>
@@ -926,9 +1006,9 @@ export default function Home() {
                       className="avatar"
                       style={{ background: avatarColor(d.id), width: 34, height: 34, fontSize: 13 }}
                     >
-                      {initials(d.title)}
+                      {initials(displayName(d))}
                     </span>
-                    <span className="modal-item-title">{d.title}</span>
+                    <span className="modal-item-title">{displayName(d)}</span>
                   </button>
                 ))}
             </div>
